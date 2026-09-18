@@ -9,9 +9,21 @@ import {
   validateCustomProvider,
   type CustomProviderConfig,
   type CustomProviderFormState,
+  type ModelRow,
 } from './custom-provider-form';
 
 const t = (key: string) => key;
+
+/** A ModelRow with the capability defaults the form always provides. */
+const modelRow = (overrides: Partial<ModelRow> & Pick<ModelRow, 'id' | 'name'>): ModelRow => ({
+  row: 'm0',
+  attachment: '',
+  modalitiesInput: [],
+  modalitiesOutput: [],
+  variantEfforts: [],
+  variantExtras: {},
+  ...overrides,
+});
 
 const baseForm = (overrides: Partial<CustomProviderFormState> = {}): CustomProviderFormState => ({
   providerID: 'custom-provider',
@@ -19,7 +31,7 @@ const baseForm = (overrides: Partial<CustomProviderFormState> = {}): CustomProvi
   protocol: 'openai-chat',
   baseURL: 'https://api.example.com/v1',
   apiKey: 'sk-test',
-  models: [{ row: 'm0', id: 'model-a', name: 'Model A' }],
+  models: [modelRow({ row: 'm0', id: 'model-a', name: 'Model A' })],
   headers: [{ row: 'h0', key: '', value: '' }],
   ...overrides,
 });
@@ -54,7 +66,7 @@ describe('validateCustomProvider', () => {
         name: ' Custom Provider ',
         baseURL: ' https://api.example.com/v1 ',
         apiKey: ' sk-secret ',
-        models: [{ row: 'm0', id: ' model-a ', name: ' Model A ' }],
+        models: [modelRow({ row: 'm0', id: ' model-a ', name: ' Model A ' })],
         headers: [
           { row: 'h0', key: ' X-Test ', value: ' enabled ' },
           { row: 'h1', key: '', value: '' },
@@ -138,8 +150,8 @@ describe('validateCustomProvider', () => {
         providerID: 'Bad ID',
         baseURL: 'ftp://example.com',
         models: [
-          { row: 'm0', id: 'model-a', name: 'Model A' },
-          { row: 'm1', id: 'model-a', name: 'Model A 2' },
+          modelRow({ row: 'm0', id: 'model-a', name: 'Model A' }),
+          modelRow({ row: 'm1', id: 'model-a', name: 'Model A 2' }),
         ],
         headers: [
           { row: 'h0', key: 'Authorization', value: 'one' },
@@ -199,6 +211,113 @@ describe('validateCustomProvider', () => {
   });
 });
 
+describe('model capability serialization', () => {
+  const configFor = (model: ModelRow) => {
+    const validated = validateCustomProvider({
+      form: baseForm({ models: [model] }),
+      t,
+      existingProviderIDs: new Set(),
+    });
+    return validated.result?.config.models[model.id.trim()];
+  };
+
+  test('emits only the fields the model actually sets', () => {
+    expect(configFor(modelRow({ row: 'm0', id: 'model-a', name: 'Model A' }))).toEqual({
+      name: 'Model A',
+    });
+  });
+
+  test('serializes attachment, modalities, limit, and variants', () => {
+    const config = configFor(modelRow({
+      row: 'm0',
+      id: 'model-a',
+      name: 'Model A',
+      attachment: 'true',
+      modalitiesInput: ['text', 'image'],
+      modalitiesOutput: ['text'],
+      limitContext: 200000,
+      limitInput: 100000,
+      variantEfforts: ['low'],
+      variantExtras: { plain: {} },
+    }));
+
+    expect(config).toEqual({
+      name: 'Model A',
+      attachment: true,
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      limit: { context: 200000, input: 100000 },
+      variants: { low: { reasoningEffort: 'low' }, plain: {} },
+    });
+  });
+
+  test('keeps attachment:false but omits the unset tri-state', () => {
+    expect(configFor(modelRow({ row: 'm0', id: 'm', name: 'M', attachment: 'false' })))
+      .toEqual({ name: 'M', attachment: false });
+    expect(configFor(modelRow({ row: 'm0', id: 'm', name: 'M', attachment: '' })))
+      .toEqual({ name: 'M' });
+  });
+});
+
+describe('model capability read-back', () => {
+  test('reconstructs capability form state from a provider model', () => {
+    const state = providerToCustomFormState({
+      id: 'p',
+      options: { baseURL: 'https://x.example.com/v1' },
+      models: [{
+        id: 'm',
+        name: 'M',
+        attachment: true,
+        modalities: { input: ['text', 'image'], output: ['text'] },
+        limit: { context: 128000, output: 4096 },
+        variants: {
+          low: { reasoningEffort: 'low' },
+          high: { reasoningEffort: 'medium' },
+          plain: {},
+        },
+      }],
+    });
+
+    const model = state.models[0];
+    expect(model.attachment).toBe('true');
+    expect(model.modalitiesInput).toEqual(['text', 'image']);
+    expect(model.modalitiesOutput).toEqual(['text']);
+    expect(model.limitContext).toBe(128000);
+    expect(model.limitOutput).toBe(4096);
+    expect(model.limitInput).toBeUndefined();
+    // Only exact `{ reasoningEffort: <name> }` entries light up chips; the rest is preserved verbatim.
+    expect(model.variantEfforts).toEqual(['low']);
+    expect(model.variantExtras).toEqual({ high: { reasoningEffort: 'medium' }, plain: {} });
+
+    const roundTrip = validateCustomProvider({
+      form: { ...baseForm(), models: [model] },
+      t,
+      existingProviderIDs: new Set(),
+    });
+    expect(roundTrip.result?.config.models.m?.variants).toEqual({
+      low: { reasoningEffort: 'low' },
+      high: { reasoningEffort: 'medium' },
+      plain: {},
+    });
+  });
+
+  test('falls back to capabilities boolean maps when modalities are absent', () => {
+    const state = providerToCustomFormState({
+      id: 'p',
+      options: { baseURL: 'https://x.example.com/v1' },
+      models: [{
+        id: 'm',
+        name: 'M',
+        capabilities: { attachment: false, input: { text: true, image: true, audio: false } },
+      }],
+    });
+
+    const model = state.models[0];
+    expect(model.attachment).toBe('false');
+    expect(model.modalitiesInput).toEqual(['text', 'image']);
+    expect(model.modalitiesOutput).toEqual([]);
+  });
+});
+
 describe('request construction', () => {
   test('builds auth.set and provider upsert requests', () => {
     const validated = validateCustomProvider({
@@ -216,6 +335,7 @@ describe('request construction', () => {
       providerID: 'custom-provider',
       config: plan.config,
       scope: 'user',
+      manageModelCapabilities: true,
     });
   });
 
@@ -312,7 +432,19 @@ describe('provider edit helpers', () => {
     expect(state.baseURL).toBe('https://llm.example.edu/v1');
     expect(state.apiKey).toBe('{env:CAMPUS_KEY}');
     expect(state.protocol).toBe('openai-chat');
-    expect(state.models[0]).toEqual({ row: state.models[0].row, id: 'fast', name: 'Fast' });
+    expect(state.models[0]).toEqual({
+      row: state.models[0].row,
+      id: 'fast',
+      name: 'Fast',
+      attachment: '',
+      modalitiesInput: [],
+      modalitiesOutput: [],
+      limitContext: undefined,
+      limitInput: undefined,
+      limitOutput: undefined,
+      variantEfforts: [],
+      variantExtras: {},
+    });
     expect(state.headers[0]).toEqual({ row: state.headers[0].row, key: 'X-Campus', value: '1' });
   });
 

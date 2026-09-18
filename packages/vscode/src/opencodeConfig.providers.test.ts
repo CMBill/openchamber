@@ -433,4 +433,110 @@ describe('custom provider config persistence (VS Code parity)', () => {
       }
     }
   });
+
+  test('validateCustomProviderConfig rejects malformed model capabilities', () => {
+    const base = { name: 'X', options: { baseURL: 'https://api.example.com' } };
+    const invalid = [
+      { m: { name: 'M', limit: { context: -1 } } },
+      { m: { name: 'M', limit: { context: 1.5 } } },
+      { m: { name: 'M', modalities: { input: 'text' } } },
+      { m: { name: 'M', modalities: { input: ['', '  '] } } },
+      { m: { name: 'M', variants: { '': {} } } },
+      { m: { name: 'M', variants: { low: 'nope' } } },
+    ];
+    for (const models of invalid) {
+      assert.equal(validateCustomProviderConfig('ok', { ...base, models }, { hasStoredAuth: true }).ok, false);
+    }
+  });
+
+  test('upsertProviderConfig normalizes and persists model capabilities', () => {
+    const result = upsertProviderConfig('cap-llm', {
+      name: 'Cap LLM',
+      options: { baseURL: 'https://cap.example.edu/v1' },
+      models: {
+        m: {
+          name: 'M',
+          attachment: true,
+          modalities: { input: ['text', ' image '], output: ['text'] },
+          limit: { context: 128000, output: 4096 },
+          variants: { low: { reasoningEffort: 'low' } },
+        },
+      },
+      env: ['CAP_KEY'],
+    }, projectDir, 'project');
+
+    assert.deepEqual(readJson(result.path).provider['cap-llm'].models.m, {
+      name: 'M',
+      attachment: true,
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      limit: { context: 128000, output: 4096 },
+      variants: { low: { reasoningEffort: 'low' } },
+    });
+  });
+
+  test('manageModelCapabilities clears removed capability fields but keeps unmanaged metadata', () => {
+    const configPath = path.join(projectDir, 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Old',
+          options: { baseURL: 'https://old.example.edu/v1' },
+          models: {
+            kept: {
+              name: 'Kept',
+              attachment: true,
+              reasoning: true,
+              modalities: { input: ['text', 'image'], output: ['text'] },
+              limit: { context: 1000, output: 200 },
+              variants: { low: { reasoningEffort: 'low' } },
+              options: { instructions: 'stay' },
+            },
+          },
+        },
+      },
+    });
+
+    upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://new.example.edu/v1' },
+      models: { kept: { name: 'Kept' } },
+    }, projectDir, 'project', { hasStoredAuth: true, manageModelCapabilities: true });
+
+    assert.deepEqual(readJson(configPath).provider['campus-llm'].models.kept, {
+      name: 'Kept',
+      reasoning: true,
+      options: { instructions: 'stay' },
+    });
+  });
+
+  test('upsertProviderConfig reads and rewrites a project opencode.jsonc', () => {
+    const configPath = path.join(projectDir, 'opencode.jsonc');
+    fs.writeFileSync(configPath, [
+      '{',
+      '  // capabilities live here',
+      '  "provider": {',
+      '    "campus-llm": {',
+      '      "npm": "@ai-sdk/openai-compatible",',
+      '      "name": "Old",',
+      '      "options": { "baseURL": "https://old.example.edu/v1" },',
+      '      "models": { "a": { "name": "A" } },',
+      '    }',
+      '  }',
+      '}',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://llm.example.edu/v1' },
+      models: { b: { name: 'B' } },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    assert.equal(result.path, configPath);
+    const written = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.equal(written.provider['campus-llm'].name, 'Campus LLM');
+    assert.deepEqual(written.provider['campus-llm'].models, { b: { name: 'B' } });
+    assert.equal(fs.existsSync(`${configPath}.openchamber.backup`), true);
+  });
 });

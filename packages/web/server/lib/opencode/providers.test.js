@@ -412,4 +412,112 @@ describe('custom provider config persistence', () => {
       }
     }
   });
+
+  test('validateCustomProviderConfig rejects malformed model capabilities', () => {
+    const base = { name: 'X', options: { baseURL: 'https://api.example.com' } };
+    const invalid = [
+      { m: { name: 'M', limit: { context: -1 } } },
+      { m: { name: 'M', limit: { context: 1.5 } } },
+      { m: { name: 'M', modalities: { input: 'text' } } },
+      { m: { name: 'M', modalities: { input: ['', '  '] } } },
+      { m: { name: 'M', variants: { '': {} } } },
+      { m: { name: 'M', variants: { low: 'nope' } } },
+    ];
+    for (const models of invalid) {
+      expect(validateCustomProviderConfig('ok', { ...base, models }, { hasStoredAuth: true }).ok).toBe(false);
+    }
+  });
+
+  test('upsertProviderConfig normalizes and persists model capabilities', () => {
+    const result = upsertProviderConfig('cap-llm', {
+      name: 'Cap LLM',
+      options: { baseURL: 'https://cap.example.edu/v1' },
+      models: {
+        m: {
+          name: 'M',
+          attachment: true,
+          modalities: { input: ['text', ' image '], output: ['text'] },
+          limit: { context: 128000, output: 4096 },
+          variants: { low: { reasoningEffort: 'low' } },
+        },
+      },
+      env: ['CAP_KEY'],
+    }, projectDir, 'project');
+
+    expect(readJson(result.path).provider['cap-llm'].models.m).toEqual({
+      name: 'M',
+      attachment: true,
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      limit: { context: 128000, output: 4096 },
+      variants: { low: { reasoningEffort: 'low' } },
+    });
+  });
+
+  test('manageModelCapabilities clears removed capability fields but keeps unmanaged metadata', () => {
+    const configPath = path.join(projectDir, 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Old',
+          options: { baseURL: 'https://old.example.edu/v1' },
+          models: {
+            kept: {
+              name: 'Kept',
+              attachment: true,
+              reasoning: true,
+              modalities: { input: ['text', 'image'], output: ['text'] },
+              limit: { context: 1000, output: 200 },
+              variants: { low: { reasoningEffort: 'low' } },
+              options: { instructions: 'stay' },
+            },
+          },
+        },
+      },
+    });
+
+    // The capability-aware form resubmits the model with only the fields still set.
+    upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://new.example.edu/v1' },
+      models: { kept: { name: 'Kept' } },
+    }, projectDir, 'project', { hasStoredAuth: true, manageModelCapabilities: true });
+
+    expect(readJson(configPath).provider['campus-llm'].models.kept).toEqual({
+      name: 'Kept',
+      reasoning: true,
+      options: { instructions: 'stay' },
+    });
+  });
+
+  test('upsertProviderConfig reads and rewrites a project opencode.jsonc', () => {
+    const configPath = path.join(projectDir, 'opencode.jsonc');
+    fs.writeFileSync(configPath, [
+      '{',
+      '  // capabilities live here',
+      '  "provider": {',
+      '    "campus-llm": {',
+      '      "npm": "@ai-sdk/openai-compatible",',
+      '      "name": "Old",',
+      '      "options": { "baseURL": "https://old.example.edu/v1" },',
+      '      "models": { "a": { "name": "A" } },',
+      '    }',
+      '  }',
+      '}',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://llm.example.edu/v1' },
+      models: { b: { name: 'B' } },
+    }, projectDir, 'project', { hasStoredAuth: true });
+
+    expect(result.path).toBe(configPath);
+    // Rewrite drops comments but keeps JSON valid at the same .jsonc path and backs up first.
+    const written = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    expect(written.provider['campus-llm'].name).toBe('Campus LLM');
+    expect(written.provider['campus-llm'].models).toEqual({ b: { name: 'B' } });
+    expect(fs.existsSync(`${configPath}.openchamber.backup`)).toBe(true);
+  });
 });

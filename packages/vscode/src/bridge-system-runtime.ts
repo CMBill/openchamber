@@ -491,12 +491,14 @@ export async function handleSystemBridgeMessage(
         config,
         scope,
         directory,
+        manageModelCapabilities,
       } = (payload || {}) as {
         providerID?: string;
         providerId?: string;
         config?: unknown;
         scope?: string;
         directory?: string;
+        manageModelCapabilities?: boolean;
       };
       const providerId = (typeof providerID === 'string' && providerID.trim())
         || (typeof providerIdAlias === 'string' && providerIdAlias.trim())
@@ -520,7 +522,7 @@ export async function handleSystemBridgeMessage(
           config,
           workingDirectory,
           normalizedScope,
-          { hasStoredAuth: Boolean(getProviderAuth(providerId)) },
+          { hasStoredAuth: Boolean(getProviderAuth(providerId)), manageModelCapabilities: manageModelCapabilities === true },
         );
         await ctx?.manager?.restart();
         return {

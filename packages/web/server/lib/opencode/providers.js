@@ -103,7 +103,77 @@ function validateCustomProviderConfig(providerId, config, options = {}) {
     if (!modelName) {
       return { ok: false, error: `Model "${trimmedId}" requires a name` };
     }
-    normalizedModels[trimmedId] = { name: modelName };
+
+    const normalizedModel = { name: modelName };
+
+    if (typeof modelValue.attachment === 'boolean') {
+      normalizedModel.attachment = modelValue.attachment;
+    }
+
+    if (modelValue.modalities !== undefined) {
+      if (!isPlainObject(modelValue.modalities)) {
+        return { ok: false, error: `Model "${trimmedId}" modalities must be an object` };
+      }
+      const modalities = {};
+      for (const channel of ['input', 'output']) {
+        const raw = modelValue.modalities[channel];
+        if (raw === undefined) {
+          continue;
+        }
+        if (!Array.isArray(raw) || raw.some((token) => typeof token !== 'string' || !token.trim())) {
+          return { ok: false, error: `Model "${trimmedId}" modalities.${channel} must be an array of strings` };
+        }
+        const tokens = [...new Set(raw.map((token) => token.trim()))];
+        if (tokens.length > 0) {
+          modalities[channel] = tokens;
+        }
+      }
+      if (Object.keys(modalities).length > 0) {
+        normalizedModel.modalities = modalities;
+      }
+    }
+
+    if (modelValue.limit !== undefined) {
+      if (!isPlainObject(modelValue.limit)) {
+        return { ok: false, error: `Model "${trimmedId}" limit must be an object` };
+      }
+      const limit = {};
+      for (const key of ['context', 'input', 'output']) {
+        const raw = modelValue.limit[key];
+        if (raw === undefined) {
+          continue;
+        }
+        if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0 || !Number.isInteger(raw)) {
+          return { ok: false, error: `Model "${trimmedId}" limit.${key} must be a non-negative integer` };
+        }
+        limit[key] = raw;
+      }
+      if (Object.keys(limit).length > 0) {
+        normalizedModel.limit = limit;
+      }
+    }
+
+    if (modelValue.variants !== undefined) {
+      if (!isPlainObject(modelValue.variants)) {
+        return { ok: false, error: `Model "${trimmedId}" variants must be an object` };
+      }
+      const variants = {};
+      for (const [variantName, variantValue] of Object.entries(modelValue.variants)) {
+        const trimmedName = typeof variantName === 'string' ? variantName.trim() : '';
+        if (!trimmedName) {
+          return { ok: false, error: `Model "${trimmedId}" variant names must be non-empty` };
+        }
+        if (!isPlainObject(variantValue)) {
+          return { ok: false, error: `Model "${trimmedId}" variant "${trimmedName}" must be an object` };
+        }
+        variants[trimmedName] = variantValue;
+      }
+      if (Object.keys(variants).length > 0) {
+        normalizedModel.variants = variants;
+      }
+    }
+
+    normalizedModels[trimmedId] = normalizedModel;
   }
 
   const normalized = {
@@ -152,7 +222,9 @@ function validateCustomProviderConfig(providerId, config, options = {}) {
   return { ok: true, value: { providerId, config: normalized } };
 }
 
-function mergeCustomProviderConfig(existingValue, normalizedConfig) {
+const MANAGED_MODEL_KEYS = ['attachment', 'modalities', 'limit', 'variants'];
+
+function mergeCustomProviderConfig(existingValue, normalizedConfig, manageModelCapabilities = false) {
   const existing = isPlainObject(existingValue) ? existingValue : {};
   const existingOptions = isPlainObject(existing.options) ? existing.options : {};
   const normalizedOptions = isPlainObject(normalizedConfig.options) ? normalizedConfig.options : {};
@@ -165,9 +237,14 @@ function mergeCustomProviderConfig(existingValue, normalizedConfig) {
   const normalizedModels = isPlainObject(normalizedConfig.models) ? normalizedConfig.models : {};
   const mergedModels = Object.fromEntries(
     Object.entries(normalizedModels).map(([modelId, normalizedModel]) => {
-      const existingModel = isPlainObject(existingModels[modelId]) ? existingModels[modelId] : {};
+      const baseModel = isPlainObject(existingModels[modelId]) ? { ...existingModels[modelId] } : {};
+      if (manageModelCapabilities) {
+        for (const key of MANAGED_MODEL_KEYS) {
+          delete baseModel[key];
+        }
+      }
       const nextModel = isPlainObject(normalizedModel) ? normalizedModel : {};
-      return [modelId, { ...existingModel, ...nextModel }];
+      return [modelId, { ...baseModel, ...nextModel }];
     }),
   );
 
@@ -216,7 +293,11 @@ function upsertProviderConfig(providerId, config, workingDirectory, scope = 'use
   const providerConfig = isPlainObject(targetConfig.provider) ? { ...targetConfig.provider } : {};
   const providersAlias = isPlainObject(targetConfig.providers) ? { ...targetConfig.providers } : {};
   const existingProvider = providerConfig[validated.value.providerId] ?? providersAlias[validated.value.providerId];
-  const mergedConfig = mergeCustomProviderConfig(existingProvider, validated.value.config);
+  const mergedConfig = mergeCustomProviderConfig(
+    existingProvider,
+    validated.value.config,
+    Boolean(options.manageModelCapabilities),
+  );
   providerConfig[validated.value.providerId] = mergedConfig;
   targetConfig.provider = providerConfig;
   if (Object.prototype.hasOwnProperty.call(providersAlias, validated.value.providerId)) {

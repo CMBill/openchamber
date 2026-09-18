@@ -673,7 +673,8 @@ ${desktopReturn ? `<a class="return" href="openchamber://focus/mcp-auth">Return 
 
       const { getProviderAuth } = await getAuthLibrary();
       const hasStoredAuth = Boolean(getProviderAuth(providerID));
-      const upsertResult = upsertProviderConfig(providerID, config, directory, scope, { hasStoredAuth });
+      const manageModelCapabilities = req.body?.manageModelCapabilities === true;
+      const upsertResult = upsertProviderConfig(providerID, config, directory, scope, { hasStoredAuth, manageModelCapabilities });
 
       return res.json({
         ...buildDeferredRestartResponse(
