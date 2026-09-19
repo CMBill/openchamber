@@ -1653,6 +1653,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': 'Provider の切断に失敗しました',
   'settings.providers.page.toast.customProviderSaved': '{provider} を接続しました',
   'settings.providers.page.toast.customProviderSaveFailed': 'カスタムプロバイダーの保存に失敗しました',
+  'settings.providers.page.toast.customProviderEditLoadFailed': '保存されたプロバイダー設定を読み込めませんでした',
   'settings.mcp.page.empty.selectServer': 'サイドバーから MCP サーバーを選択してください',
   'settings.mcp.page.empty.addNewOne': 'または新しいものを追加',
   'settings.mcp.page.header.newServer': '新しい MCP サーバー',

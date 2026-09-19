@@ -1643,6 +1643,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': 'Failed to disconnect provider',
   'settings.providers.page.toast.customProviderSaved': '{provider} connected',
   'settings.providers.page.toast.customProviderSaveFailed': 'Failed to save custom provider',
+  'settings.providers.page.toast.customProviderEditLoadFailed': 'Could not load the saved provider configuration',
   'settings.mcp.page.empty.selectServer': 'Select an MCP server from the sidebar',
   'settings.mcp.page.empty.addNewOne': 'or add a new one',
   'settings.mcp.page.header.newServer': 'New MCP Server',

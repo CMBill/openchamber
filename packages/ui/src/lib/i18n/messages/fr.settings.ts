@@ -1538,6 +1538,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': 'Échec de la déconnexion du fournisseur',
   'settings.providers.page.toast.customProviderSaved': '{provider} connecté',
   'settings.providers.page.toast.customProviderSaveFailed': 'Échec de l’enregistrement du fournisseur personnalisé',
+  'settings.providers.page.toast.customProviderEditLoadFailed': 'Impossible de charger la configuration enregistrée du fournisseur',
   'settings.mcp.page.empty.selectServer': 'Sélectionnez un serveur MCP dans la barre latérale',
   'settings.mcp.page.empty.addNewOne': 'ou ajoutez-en un nouveau',
   'settings.mcp.page.header.newServer': 'Nouveau serveur MCP',

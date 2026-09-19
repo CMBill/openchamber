@@ -134,6 +134,18 @@ describe('custom provider config persistence', () => {
     const sources = getProviderSources('campus-llm', projectDir);
     expect(sources.sources.project.exists).toBe(true);
     expect(sources.sources.project.path).toBe(result.path);
+    expect(sources.providerBlock).toEqual({
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Campus LLM',
+      env: ['CAMPUS_KEY'],
+      options: {
+        baseURL: 'https://llm.example.edu/v1',
+        headers: { 'X-Campus': '1' },
+      },
+      models: {
+        'fast-model': { name: 'Fast' },
+      },
+    });
   });
 
   test('upsertProviderConfig updates existing entry and clears disabled_providers', () => {
@@ -302,6 +314,52 @@ describe('custom provider config persistence', () => {
     expect(getProviderSources('temp-provider', projectDir).sources.project.exists).toBe(false);
   });
 
+  test('getProviderSources returns the winning authored block with custom > project precedence', () => {
+    writeJson(path.join(projectDir, 'opencode.json'), {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Project layer',
+          options: { baseURL: 'https://project.example.com/v1' },
+          models: { m: { name: 'M' } },
+        },
+      },
+    });
+
+    expect(getProviderSources('campus-llm', projectDir).providerBlock.name).toBe('Project layer');
+
+    const customPath = path.join(projectDir, 'custom-opencode.json');
+    const previousEnv = process.env.OPENCODE_CONFIG;
+    process.env.OPENCODE_CONFIG = customPath;
+    try {
+      // Legacy `providers` alias must be picked up like the primary key.
+      writeJson(customPath, {
+        providers: {
+          'campus-llm': {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'Custom layer',
+            options: { baseURL: 'https://custom.example.com/v1' },
+            models: { m: { name: 'M' } },
+          },
+        },
+      });
+
+      const sources = getProviderSources('campus-llm', projectDir);
+      expect(sources.providerBlock.name).toBe('Custom layer');
+      expect(sources.sources.custom.exists).toBe(true);
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.OPENCODE_CONFIG;
+      } else {
+        process.env.OPENCODE_CONFIG = previousEnv;
+      }
+    }
+  });
+
+  test('getProviderSources omits providerBlock for catalog-only providers', () => {
+    expect(getProviderSources('never-authored', projectDir).providerBlock).toBeNull();
+  });
+
   test('failed validation does not write config', () => {
     const configPath = path.join(projectDir, 'opencode.json');
     expect(() => upsertProviderConfig('ok', {
@@ -416,6 +474,8 @@ describe('custom provider config persistence', () => {
   test('validateCustomProviderConfig rejects malformed model capabilities', () => {
     const base = { name: 'X', options: { baseURL: 'https://api.example.com' } };
     const invalid = [
+      { m: { name: 'M', attachment: 'true' } },
+      { m: { name: 'M', attachment: 1 } },
       { m: { name: 'M', limit: { context: -1 } } },
       { m: { name: 'M', limit: { context: 1.5 } } },
       { m: { name: 'M', modalities: { input: 'text' } } },
@@ -426,6 +486,33 @@ describe('custom provider config persistence', () => {
     for (const models of invalid) {
       expect(validateCustomProviderConfig('ok', { ...base, models }, { hasStoredAuth: true }).ok).toBe(false);
     }
+  });
+
+  test('manageModelCapabilities does not clear capabilities when a malformed attachment is sent', () => {
+    const configPath = path.join(projectDir, 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Old',
+          options: { baseURL: 'https://old.example.edu/v1' },
+          models: {
+            kept: { name: 'Kept', attachment: true },
+          },
+        },
+      },
+    });
+
+    expect(() => upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://new.example.edu/v1' },
+      models: { kept: { name: 'Kept', attachment: 'true' } },
+    }, projectDir, 'project', { hasStoredAuth: true, manageModelCapabilities: true })).toThrow();
+
+    expect(readJson(configPath).provider['campus-llm'].models.kept).toEqual({
+      name: 'Kept',
+      attachment: true,
+    });
   });
 
   test('upsertProviderConfig normalizes and persists model capabilities', () => {

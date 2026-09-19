@@ -1567,6 +1567,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': 'Provider bağlantısı kesilemedi',
   'settings.providers.page.toast.customProviderSaved': '{provider} bağlandı',
   'settings.providers.page.toast.customProviderSaveFailed': 'Özel provider kaydedilemedi',
+  'settings.providers.page.toast.customProviderEditLoadFailed': 'Kaydedilen provider yapılandırması yüklenemedi',
   'settings.mcp.page.empty.selectServer': 'Kenar çubuğundan bir MCP sunucusu seçin',
   'settings.mcp.page.empty.addNewOne': 'veya yeni bir tane ekleyin',
   'settings.mcp.page.header.newServer': 'Yeni MCP Sunucusu',

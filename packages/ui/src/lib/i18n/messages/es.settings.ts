@@ -1620,6 +1620,7 @@ export const settingsDict = {
   "settings.providers.page.toast.providerDisconnectFailed": "No se pudo desconectar el proveedor",
   "settings.providers.page.toast.customProviderSaved": "{provider} conectado",
   "settings.providers.page.toast.customProviderSaveFailed": "No se pudo guardar el proveedor personalizado",
+  "settings.providers.page.toast.customProviderEditLoadFailed": "No se pudo cargar la configuración guardada del proveedor",
   "settings.mcp.page.empty.selectServer": "Selecciona un servidor MCP desde el panel lateral",
   "settings.mcp.page.empty.addNewOne": "o añade uno nuevo",
   "settings.mcp.page.header.newServer": "Nuevo servidor MCP",

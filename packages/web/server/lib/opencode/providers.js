@@ -15,6 +15,16 @@ const CUSTOM_PROVIDER_NPM_PACKAGES = new Set([
   '@ai-sdk/anthropic',
 ]);
 
+function pickAuthoredProviderBlock(primary, alias, providerId) {
+  if (isPlainObject(primary) && isPlainObject(primary[providerId])) {
+    return primary[providerId];
+  }
+  if (isPlainObject(alias) && isPlainObject(alias[providerId])) {
+    return alias[providerId];
+  }
+  return null;
+}
+
 function getProviderSources(providerId, workingDirectory) {
   const layers = readConfigLayers(workingDirectory);
   const { userConfig, projectConfig, customConfig, paths } = layers;
@@ -36,13 +46,21 @@ function getProviderSources(providerId, workingDirectory) {
     Object.prototype.hasOwnProperty.call(userProviders, providerId) ||
     Object.prototype.hasOwnProperty.call(userProvidersAlias, providerId);
 
+  // Winning authored block, resolved with the same layer precedence the write
+  // path uses (custom > project > user) so edit read-back reflects exactly the
+  // entry a save would rewrite — never catalog-resolved defaults.
+  const providerBlock = pickAuthoredProviderBlock(customProviders, customProvidersAlias, providerId)
+    ?? pickAuthoredProviderBlock(projectProviders, projectProvidersAlias, providerId)
+    ?? pickAuthoredProviderBlock(userProviders, userProvidersAlias, providerId);
+
   return {
     sources: {
       auth: { exists: false },
       user: { exists: userExists, path: paths.userPath },
       project: { exists: projectExists, path: paths.projectPath || null },
       custom: { exists: customExists, path: paths.customPath }
-    }
+    },
+    providerBlock,
   };
 }
 
@@ -106,7 +124,10 @@ function validateCustomProviderConfig(providerId, config, options = {}) {
 
     const normalizedModel = { name: modelName };
 
-    if (typeof modelValue.attachment === 'boolean') {
+    if (modelValue.attachment !== undefined) {
+      if (typeof modelValue.attachment !== 'boolean') {
+        return { ok: false, error: `Model "${trimmedId}" attachment must be a boolean` };
+      }
       normalizedModel.attachment = modelValue.attachment;
     }
 

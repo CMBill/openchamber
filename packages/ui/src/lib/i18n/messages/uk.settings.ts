@@ -1620,6 +1620,7 @@ export const settingsDict = {
   "settings.providers.page.toast.providerDisconnectFailed": "Не вдалося відключити провайдера",
   "settings.providers.page.toast.customProviderSaved": "{provider} підключено",
   "settings.providers.page.toast.customProviderSaveFailed": "Не вдалося зберегти власного провайдера",
+  "settings.providers.page.toast.customProviderEditLoadFailed": "Не вдалося завантажити збережену конфігурацію провайдера",
   "settings.mcp.page.empty.selectServer": "Виберіть MCP сервер на бічній панелі",
   "settings.mcp.page.empty.addNewOne": "або додати новий",
   "settings.mcp.page.header.newServer": "Новий сервер MCP",

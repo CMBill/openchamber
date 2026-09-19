@@ -1581,6 +1581,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': 'Fehler beim Trennen des Anbieters',
   'settings.providers.page.toast.customProviderSaved': '{provider} verbunden',
   'settings.providers.page.toast.customProviderSaveFailed': 'Benutzerdefinierter Anbieter konnte nicht gespeichert werden',
+  'settings.providers.page.toast.customProviderEditLoadFailed': 'Gespeicherte Anbieterkonfiguration konnte nicht geladen werden',
   'settings.mcp.page.empty.selectServer': 'Wählen Sie einen MCP-Server aus der Seitenleiste',
   'settings.mcp.page.empty.addNewOne': 'oder fügen Sie einen neuen hinzu',
   'settings.mcp.page.header.newServer': 'Neuer MCP-Server',

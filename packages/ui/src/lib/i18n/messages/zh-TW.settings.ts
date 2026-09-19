@@ -1527,6 +1527,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': '中斷供應商連線失敗',
   'settings.providers.page.toast.customProviderSaved': '已連線 {provider}',
   'settings.providers.page.toast.customProviderSaveFailed': '無法儲存自訂供應商',
+  'settings.providers.page.toast.customProviderEditLoadFailed': '無法載入已儲存的供應商設定',
   'settings.mcp.page.empty.selectServer': '請從側邊欄選擇一個 MCP 伺服器',
   'settings.mcp.page.empty.addNewOne': '或新增一個新的',
   'settings.mcp.page.header.newServer': '新建 MCP 伺服器',

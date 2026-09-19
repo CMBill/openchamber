@@ -474,10 +474,10 @@ export async function handleSystemBridgeMessage(
         const workingDirectory = typeof directory === 'string' && directory.trim().length > 0
           ? directory.trim()
           : ctx?.manager?.getWorkingDirectory();
-        const sources = getProviderSources(providerId, workingDirectory);
+        const { sources, providerBlock } = getProviderSources(providerId, workingDirectory);
         const auth = getProviderAuth(providerId);
         sources.auth.exists = Boolean(auth);
-        return { id, type, success: true, data: { providerId, sources } };
+        return { id, type, success: true, data: { providerId, sources, providerBlock } };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return { id, type, success: false, error: errorMessage };

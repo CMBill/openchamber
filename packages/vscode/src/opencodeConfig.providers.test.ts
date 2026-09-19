@@ -133,8 +133,20 @@ describe('custom provider config persistence (VS Code parity)', () => {
     });
 
     const sources = getProviderSources('campus-llm', projectDir);
-    assert.equal(sources.project.exists, true);
-    assert.equal(sources.project.path, result.path);
+    assert.equal(sources.sources.project.exists, true);
+    assert.equal(sources.sources.project.path, result.path);
+    assert.deepEqual(sources.providerBlock, {
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Campus LLM',
+      env: ['CAMPUS_KEY'],
+      options: {
+        baseURL: 'https://llm.example.edu/v1',
+        headers: { 'X-Campus': '1' },
+      },
+      models: {
+        'fast-model': { name: 'Fast' },
+      },
+    });
   });
 
   test('round-trips non-default protocol adapters through project config', () => {
@@ -315,9 +327,55 @@ describe('custom provider config persistence (VS Code parity)', () => {
       env: ['TEMP_KEY'],
     }, projectDir, 'project');
 
-    assert.equal(getProviderSources('temp-provider', projectDir).project.exists, true);
+    assert.equal(getProviderSources('temp-provider', projectDir).sources.project.exists, true);
     assert.equal(removeProviderConfig('temp-provider', projectDir, 'project'), true);
-    assert.equal(getProviderSources('temp-provider', projectDir).project.exists, false);
+    assert.equal(getProviderSources('temp-provider', projectDir).sources.project.exists, false);
+  });
+
+  test('getProviderSources returns the winning authored block with custom > project precedence', () => {
+    writeJson(path.join(projectDir, 'opencode.json'), {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Project layer',
+          options: { baseURL: 'https://project.example.com/v1' },
+          models: { m: { name: 'M' } },
+        },
+      },
+    });
+
+    assert.equal(getProviderSources('campus-llm', projectDir).providerBlock?.name, 'Project layer');
+
+    const customPath = path.join(projectDir, 'custom-opencode.json');
+    const previousEnv = process.env.OPENCODE_CONFIG;
+    process.env.OPENCODE_CONFIG = customPath;
+    try {
+      // Legacy `providers` alias must be picked up like the primary key.
+      writeJson(customPath, {
+        providers: {
+          'campus-llm': {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'Custom layer',
+            options: { baseURL: 'https://custom.example.com/v1' },
+            models: { m: { name: 'M' } },
+          },
+        },
+      });
+
+      const sources = getProviderSources('campus-llm', projectDir);
+      assert.equal(sources.providerBlock?.name, 'Custom layer');
+      assert.equal(sources.sources.custom.exists, true);
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.OPENCODE_CONFIG;
+      } else {
+        process.env.OPENCODE_CONFIG = previousEnv;
+      }
+    }
+  });
+
+  test('getProviderSources omits providerBlock for catalog-only providers', () => {
+    assert.equal(getProviderSources('never-authored', projectDir).providerBlock, null);
   });
 
   test('failed validation does not write config', () => {
@@ -373,9 +431,9 @@ describe('custom provider config persistence (VS Code parity)', () => {
     });
 
     const sources = getProviderSources(providerId, projectDir);
-    assert.equal(sources.project.exists, true);
-    assert.equal(sources.user.exists, false);
-    assert.equal(sources.custom.exists, false);
+    assert.equal(sources.sources.project.exists, true);
+    assert.equal(sources.sources.user.exists, false);
+    assert.equal(sources.sources.custom.exists, false);
 
     for (const userPath of [
       path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
@@ -412,9 +470,9 @@ describe('custom provider config persistence (VS Code parity)', () => {
       assert.equal(written.provider[providerId].options.baseURL, 'https://custom.example.com/v2');
 
       const sources = getProviderSources(providerId, projectDir);
-      assert.equal(sources.custom.exists, true);
-      assert.equal(sources.user.exists, false);
-      assert.equal(sources.project.exists, false);
+      assert.equal(sources.sources.custom.exists, true);
+      assert.equal(sources.sources.user.exists, false);
+      assert.equal(sources.sources.project.exists, false);
 
       for (const userPath of [
         path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
@@ -437,6 +495,8 @@ describe('custom provider config persistence (VS Code parity)', () => {
   test('validateCustomProviderConfig rejects malformed model capabilities', () => {
     const base = { name: 'X', options: { baseURL: 'https://api.example.com' } };
     const invalid = [
+      { m: { name: 'M', attachment: 'true' } },
+      { m: { name: 'M', attachment: 1 } },
       { m: { name: 'M', limit: { context: -1 } } },
       { m: { name: 'M', limit: { context: 1.5 } } },
       { m: { name: 'M', modalities: { input: 'text' } } },
@@ -447,6 +507,33 @@ describe('custom provider config persistence (VS Code parity)', () => {
     for (const models of invalid) {
       assert.equal(validateCustomProviderConfig('ok', { ...base, models }, { hasStoredAuth: true }).ok, false);
     }
+  });
+
+  test('manageModelCapabilities does not clear capabilities when a malformed attachment is sent', () => {
+    const configPath = path.join(projectDir, 'opencode.json');
+    writeJson(configPath, {
+      provider: {
+        'campus-llm': {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'Old',
+          options: { baseURL: 'https://old.example.edu/v1' },
+          models: {
+            kept: { name: 'Kept', attachment: true },
+          },
+        },
+      },
+    });
+
+    assert.throws(() => upsertProviderConfig('campus-llm', {
+      name: 'Campus LLM',
+      options: { baseURL: 'https://new.example.edu/v1' },
+      models: { kept: { name: 'Kept', attachment: 'true' } },
+    }, projectDir, 'project', { hasStoredAuth: true, manageModelCapabilities: true }));
+
+    assert.deepEqual(readJson(configPath).provider['campus-llm'].models.kept, {
+      name: 'Kept',
+      attachment: true,
+    });
   });
 
   test('upsertProviderConfig normalizes and persists model capabilities', () => {

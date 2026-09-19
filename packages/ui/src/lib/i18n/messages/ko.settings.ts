@@ -1620,6 +1620,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': '프로바이더 연결을 해제하지 못했습니다',
   'settings.providers.page.toast.customProviderSaved': '{provider} 연결됨',
   'settings.providers.page.toast.customProviderSaveFailed': '사용자 정의 제공자를 저장하지 못했습니다',
+  'settings.providers.page.toast.customProviderEditLoadFailed': '저장된 제공자 구성을 불러오지 못했습니다',
   'settings.mcp.page.empty.selectServer': '사이드바에서 MCP 서버를 선택하세요',
   'settings.mcp.page.empty.addNewOne': '또는 새로 추가하세요',
   'settings.mcp.page.header.newServer': '새 MCP 서버',

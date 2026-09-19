@@ -1620,6 +1620,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': '断开提供商连接失败',
   'settings.providers.page.toast.customProviderSaved': '已连接 {provider}',
   'settings.providers.page.toast.customProviderSaveFailed': '保存自定义提供商失败',
+  'settings.providers.page.toast.customProviderEditLoadFailed': '无法加载已保存的提供商配置',
   'settings.mcp.page.empty.selectServer': '请从侧边栏选择一个 MCP 服务器',
   'settings.mcp.page.empty.addNewOne': '或添加一个新的',
   'settings.mcp.page.header.newServer': '新建 MCP 服务器',

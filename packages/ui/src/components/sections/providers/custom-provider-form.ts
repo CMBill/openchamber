@@ -149,11 +149,6 @@ export type ProviderModelLikeForCustomForm = {
   name?: string;
   api?: { npm?: string };
   attachment?: boolean;
-  capabilities?: {
-    attachment?: boolean;
-    input?: Record<string, boolean>;
-    output?: Record<string, boolean>;
-  };
   modalities?: { input?: string[]; output?: string[] };
   limit?: { context?: number; input?: number; output?: number };
   /** Read-only view of authored variants; the SDK types values as `unknown`. */
@@ -163,10 +158,36 @@ export type ProviderModelLikeForCustomForm = {
 export type ProviderLikeForCustomForm = {
   id: string;
   name?: string;
+  /** Authored protocol adapter (`@ai-sdk/...`) straight from the config block. */
+  npm?: string;
   env?: string[];
   options?: Record<string, unknown> | null;
   models?: Array<ProviderModelLikeForCustomForm> | Record<string, ProviderModelLikeForCustomForm>;
 };
+
+/**
+ * Authored provider block as stored in an OpenCode config layer, where the map
+ * key is the provider id. Matches the SDK `Config.provider` entry shape.
+ */
+export type AuthoredProviderBlock = Omit<ProviderLikeForCustomForm, 'id'> & { id?: string };
+
+/**
+ * Stamps the provider id onto an authored provider block handed over by the
+ * owning runtime (OpenChamber server route / VS Code bridge). The block carries
+ * exactly the keys the user authored — capability fields read from it must not
+ * be seeded with resolver defaults from the resolved provider list. Returns
+ * null when the runtime delivered no block, which callers must surface as a
+ * read failure instead of falling back to resolved data.
+ */
+export function findAuthoredProviderBlock(
+  providerId: string,
+  block: AuthoredProviderBlock | null | undefined,
+): ProviderLikeForCustomForm | null {
+  if (!block || typeof block !== 'object') {
+    return null;
+  }
+  return { ...block, id: block.id || providerId };
+}
 
 let rowCounter = 0;
 
@@ -289,27 +310,18 @@ export function resolveProviderConfigScope(
   return 'user';
 }
 
-function boolMapToTokens(map: Record<string, boolean> | undefined): string[] {
-  if (!map) {
-    return [];
-  }
-  return Object.entries(map)
-    .filter(([, enabled]) => enabled === true)
-    .map(([name]) => name);
-}
-
 function readModalities(model: ProviderModelLikeForCustomForm) {
-  const input = model.modalities?.input ?? boolMapToTokens(model.capabilities?.input);
-  const output = model.modalities?.output ?? boolMapToTokens(model.capabilities?.output);
-  return { input: input ?? [], output: output ?? [] };
+  return {
+    input: model.modalities?.input ?? [],
+    output: model.modalities?.output ?? [],
+  };
 }
 
 function readAttachment(model: ProviderModelLikeForCustomForm): ModelAttachmentState {
-  const value = model.attachment ?? model.capabilities?.attachment;
-  if (value === true) {
+  if (model.attachment === true) {
     return 'true';
   }
-  if (value === false) {
+  if (model.attachment === false) {
     return 'false';
   }
   return '';
@@ -401,6 +413,13 @@ function serializeModelConfig(model: ModelRow): ModelCapabilityConfig {
   return entry;
 }
 
+/**
+ * Maps an authored provider config block into editable form state.
+ * Expects the raw config-layer block (`findAuthoredProviderConfig` result) —
+ * capability fields reflect exactly the keys the user authored, so unsetting
+ * one in the form and saving deletes it instead of materializing resolver
+ * defaults from the resolved provider list.
+ */
 export function providerToCustomFormState(provider: ProviderLikeForCustomForm): CustomProviderFormState {
   const options = provider.options && typeof provider.options === 'object' ? provider.options : {};
   const baseURL = typeof options.baseURL === 'string' ? options.baseURL : '';
@@ -430,7 +449,7 @@ export function providerToCustomFormState(provider: ProviderLikeForCustomForm): 
   return {
     providerID: provider.id,
     name: typeof provider.name === 'string' && provider.name.trim() ? provider.name : provider.id,
-    protocol: protocolFromNpm(modelWithApi?.api?.npm),
+    protocol: protocolFromNpm(provider.npm || modelWithApi?.api?.npm),
     baseURL,
     apiKey: envName ? `{env:${envName}}` : '',
     models,

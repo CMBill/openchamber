@@ -1644,6 +1644,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnectFailed': 'Nie udało się odłączyć dostawcy',
   'settings.providers.page.toast.customProviderSaved': 'Połączono {provider}',
   'settings.providers.page.toast.customProviderSaveFailed': 'Nie udało się zapisać niestandardowego dostawcy',
+  'settings.providers.page.toast.customProviderEditLoadFailed': 'Nie udało się wczytać zapisanej konfiguracji dostawcy',
   'settings.providers.page.toast.providerDisconnected': 'Dostawca został odłączony',
   'settings.providers.page.toast.providerSourcesLoadFailed': 'Nie udało się załadować źródeł dostawcy',
   'settings.providers.sidebar.actions.connectProviderAria': 'Połącz dostawcę',

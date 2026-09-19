@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildAuthSetRequest,
   buildProviderUpsertRequest,
+  findAuthoredProviderBlock,
   isConfigDefinedCustomProvider,
   isCustomOpenAICompatibleProvider,
   providerToCustomFormState,
@@ -300,21 +301,78 @@ describe('model capability read-back', () => {
     });
   });
 
-  test('falls back to capabilities boolean maps when modalities are absent', () => {
+  test('leaves capabilities unset when the authored block has no capability keys', () => {
+    // Regression guard: a config-defined model always carries resolver defaults
+    // (attachment false, text-only modalities, zero limits) in the resolved
+    // provider list. Read-back must come from the authored block, so a no-op
+    // edit must not seed the form — and the save that follows — with those
+    // defaults under manageModelCapabilities.
     const state = providerToCustomFormState({
       id: 'p',
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Campus LLM',
+      env: ['CAMPUS_KEY'],
       options: { baseURL: 'https://x.example.com/v1' },
-      models: [{
-        id: 'm',
-        name: 'M',
-        capabilities: { attachment: false, input: { text: true, image: true, audio: false } },
-      }],
+      models: { m: { name: 'M' } },
     });
 
+    expect(state.protocol).toBe('openai-chat');
+    expect(state.apiKey).toBe('{env:CAMPUS_KEY}');
     const model = state.models[0];
-    expect(model.attachment).toBe('false');
-    expect(model.modalitiesInput).toEqual(['text', 'image']);
+    expect(model.attachment).toBe('');
+    expect(model.modalitiesInput).toEqual([]);
     expect(model.modalitiesOutput).toEqual([]);
+    expect(model.limitContext).toBeUndefined();
+    expect(model.limitInput).toBeUndefined();
+    expect(model.limitOutput).toBeUndefined();
+    expect(model.variantEfforts).toEqual([]);
+    expect(model.variantExtras).toEqual({});
+
+    // Saving this read-back must round-trip without inventing capability keys.
+    const roundTrip = validateCustomProvider({
+      form: { ...baseForm(), models: [model] },
+      t,
+      existingProviderIDs: new Set(),
+    });
+    expect(roundTrip.result?.config.models.m).toEqual({ name: 'M' });
+  });
+
+  test('prefills the protocol from the authored provider npm over the model api', () => {
+    const state = providerToCustomFormState({
+      id: 'responses-api',
+      npm: '@ai-sdk/anthropic',
+      options: { baseURL: 'https://api.example.com/v1' },
+      models: [{ id: 'gpt', name: 'GPT', api: { npm: '@ai-sdk/openai' } }],
+    });
+
+    expect(state.protocol).toBe('anthropic-messages');
+  });
+});
+
+describe('findAuthoredProviderBlock', () => {
+  test('stamps the provider id from the map key onto the authored block', () => {
+    const authored = findAuthoredProviderBlock('campus-llm', {
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Campus LLM',
+      env: ['CAMPUS_KEY'],
+      options: { baseURL: 'https://llm.example.edu/v1' },
+      models: { fast: { name: 'Fast' } },
+    });
+
+    expect(authored).toEqual({
+      id: 'campus-llm',
+      npm: '@ai-sdk/openai-compatible',
+      name: 'Campus LLM',
+      env: ['CAMPUS_KEY'],
+      options: { baseURL: 'https://llm.example.edu/v1' },
+      models: { fast: { name: 'Fast' } },
+    });
+  });
+
+  test('keeps an explicit block id and rejects missing blocks', () => {
+    expect(findAuthoredProviderBlock('p', { id: 'authored-id' })?.id).toBe('authored-id');
+    expect(findAuthoredProviderBlock('p', undefined)).toBeNull();
+    expect(findAuthoredProviderBlock('p', null)).toBeNull();
   });
 });
 

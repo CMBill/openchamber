@@ -2170,6 +2170,16 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
   }
 };
 
+const pickAuthoredProviderBlock = (
+  primary: Record<string, unknown>,
+  alias: Record<string, unknown>,
+  providerId: string,
+): Record<string, unknown> | null => {
+  if (isPlainObject(primary[providerId])) return primary[providerId];
+  if (isPlainObject(alias[providerId])) return alias[providerId];
+  return null;
+};
+
 export const getProviderSources = (providerId: string, workingDirectory?: string) => {
   const layers = readConfigLayers(workingDirectory);
   const customProviders = isPlainObject((layers.customConfig as Record<string, unknown>)?.provider)
@@ -2198,11 +2208,21 @@ export const getProviderSources = (providerId: string, workingDirectory?: string
   const userExists = Object.prototype.hasOwnProperty.call(userProviders, providerId)
     || Object.prototype.hasOwnProperty.call(userProvidersAlias, providerId);
 
+  // Winning authored block, resolved with the same layer precedence the write
+  // path uses (custom > project > user) so edit read-back reflects exactly the
+  // entry a save would rewrite — never catalog-resolved defaults.
+  const providerBlock = pickAuthoredProviderBlock(customProviders, customProvidersAlias, providerId)
+    ?? pickAuthoredProviderBlock(projectProviders, projectProvidersAlias, providerId)
+    ?? pickAuthoredProviderBlock(userProviders, userProvidersAlias, providerId);
+
   return {
-    auth: { exists: false },
-    user: { exists: userExists, path: layers.paths.userPath },
-    project: { exists: projectExists, path: layers.paths.projectPath ?? null },
-    custom: { exists: customExists, path: layers.paths.customPath },
+    sources: {
+      auth: { exists: false },
+      user: { exists: userExists, path: layers.paths.userPath },
+      project: { exists: projectExists, path: layers.paths.projectPath ?? null },
+      custom: { exists: customExists, path: layers.paths.customPath },
+    },
+    providerBlock,
   };
 };
 
@@ -2347,7 +2367,10 @@ export const validateCustomProviderConfig = (
 
     const normalizedModel: NormalizedCustomProviderModel = { name: modelName };
 
-    if (typeof modelValue.attachment === 'boolean') {
+    if (modelValue.attachment !== undefined) {
+      if (typeof modelValue.attachment !== 'boolean') {
+        return { ok: false as const, error: `Model "${trimmedId}" attachment must be a boolean` };
+      }
       normalizedModel.attachment = modelValue.attachment;
     }
 

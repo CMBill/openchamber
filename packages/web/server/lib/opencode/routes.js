@@ -626,6 +626,7 @@ ${desktopReturn ? `<a class="return" href="openchamber://focus/mcp-auth">Return 
       return res.json({
         providerId,
         sources: sources.sources,
+        providerBlock: sources.providerBlock,
       });
     } catch (error) {
       console.error('Failed to get provider sources:', error);
