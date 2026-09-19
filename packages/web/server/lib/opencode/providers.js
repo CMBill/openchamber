@@ -15,16 +15,6 @@ const CUSTOM_PROVIDER_NPM_PACKAGES = new Set([
   '@ai-sdk/anthropic',
 ]);
 
-function pickAuthoredProviderBlock(primary, alias, providerId) {
-  if (isPlainObject(primary) && isPlainObject(primary[providerId])) {
-    return primary[providerId];
-  }
-  if (isPlainObject(alias) && isPlainObject(alias[providerId])) {
-    return alias[providerId];
-  }
-  return null;
-}
-
 function getProviderSources(providerId, workingDirectory) {
   const layers = readConfigLayers(workingDirectory);
   const { userConfig, projectConfig, customConfig, paths } = layers;
@@ -47,11 +37,17 @@ function getProviderSources(providerId, workingDirectory) {
     Object.prototype.hasOwnProperty.call(userProvidersAlias, providerId);
 
   // Winning authored block, resolved with the same layer precedence the write
-  // path uses (custom > project > user) so edit read-back reflects exactly the
-  // entry a save would rewrite — never catalog-resolved defaults.
-  const providerBlock = pickAuthoredProviderBlock(customProviders, customProvidersAlias, providerId)
-    ?? pickAuthoredProviderBlock(projectProviders, projectProvidersAlias, providerId)
-    ?? pickAuthoredProviderBlock(userProviders, userProvidersAlias, providerId);
+  // path uses (custom > project > user, primary key before the legacy
+  // `providers` alias) so edit read-back reflects exactly the entry a save
+  // would rewrite — never catalog-resolved defaults.
+  const providerBlock = [
+    customProviders,
+    customProvidersAlias,
+    projectProviders,
+    projectProvidersAlias,
+    userProviders,
+    userProvidersAlias,
+  ].map((providers) => providers[providerId]).find(isPlainObject) ?? null;
 
   return {
     sources: {

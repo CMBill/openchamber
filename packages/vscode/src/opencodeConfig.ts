@@ -2170,16 +2170,6 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
   }
 };
 
-const pickAuthoredProviderBlock = (
-  primary: Record<string, unknown>,
-  alias: Record<string, unknown>,
-  providerId: string,
-): Record<string, unknown> | null => {
-  if (isPlainObject(primary[providerId])) return primary[providerId];
-  if (isPlainObject(alias[providerId])) return alias[providerId];
-  return null;
-};
-
 export const getProviderSources = (providerId: string, workingDirectory?: string) => {
   const layers = readConfigLayers(workingDirectory);
   const customProviders = isPlainObject((layers.customConfig as Record<string, unknown>)?.provider)
@@ -2209,11 +2199,17 @@ export const getProviderSources = (providerId: string, workingDirectory?: string
     || Object.prototype.hasOwnProperty.call(userProvidersAlias, providerId);
 
   // Winning authored block, resolved with the same layer precedence the write
-  // path uses (custom > project > user) so edit read-back reflects exactly the
-  // entry a save would rewrite — never catalog-resolved defaults.
-  const providerBlock = pickAuthoredProviderBlock(customProviders, customProvidersAlias, providerId)
-    ?? pickAuthoredProviderBlock(projectProviders, projectProvidersAlias, providerId)
-    ?? pickAuthoredProviderBlock(userProviders, userProvidersAlias, providerId);
+  // path uses (custom > project > user, primary key before the legacy
+  // `providers` alias) so edit read-back reflects exactly the entry a save
+  // would rewrite — never catalog-resolved defaults.
+  const providerBlock = [
+    customProviders,
+    customProvidersAlias,
+    projectProviders,
+    projectProvidersAlias,
+    userProviders,
+    userProvidersAlias,
+  ].map((providers) => providers[providerId]).find(isPlainObject) ?? null;
 
   return {
     sources: {

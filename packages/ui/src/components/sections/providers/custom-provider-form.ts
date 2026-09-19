@@ -177,13 +177,14 @@ export type AuthoredProviderBlock = Omit<ProviderLikeForCustomForm, 'id'> & { id
  * exactly the keys the user authored — capability fields read from it must not
  * be seeded with resolver defaults from the resolved provider list. Returns
  * null when the runtime delivered no block, which callers must surface as a
- * read failure instead of falling back to resolved data.
+ * read failure instead of falling back to resolved data. Both runtimes deliver
+ * a plain object or null; fields are validated where they are read.
  */
 export function findAuthoredProviderBlock(
   providerId: string,
   block: AuthoredProviderBlock | null | undefined,
 ): ProviderLikeForCustomForm | null {
-  if (!block || typeof block !== 'object') {
+  if (!block) {
     return null;
   }
   return { ...block, id: block.id || providerId };
@@ -415,7 +416,7 @@ function serializeModelConfig(model: ModelRow): ModelCapabilityConfig {
 
 /**
  * Maps an authored provider config block into editable form state.
- * Expects the raw config-layer block (`findAuthoredProviderConfig` result) —
+ * Expects the raw config-layer block (`findAuthoredProviderBlock` result) —
  * capability fields reflect exactly the keys the user authored, so unsetting
  * one in the form and saving deletes it instead of materializing resolver
  * defaults from the resolved provider list.
