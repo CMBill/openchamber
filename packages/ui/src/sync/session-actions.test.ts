@@ -297,6 +297,7 @@ mock.module("./session-message-loader", () => ({
 }))
 
 mock.module("../lib/runtime-switch", () => ({
+  getRuntimeApiBaseUrl: () => "http://session-actions.test",
   getRuntimeKey: () => runtimeKey,
   switchRuntimeEndpoint: ({ runtimeKey: nextRuntimeKey }: { runtimeKey: string }) => {
     runtimeKey = nextRuntimeKey

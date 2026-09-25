@@ -36,6 +36,7 @@ import { cleanupPersistedSessionState } from "./session-deletion-cleanup"
 import { requestSessionArchiveBatch, requestSessionMetadataUpdate, requestSessionUnarchiveBatch, type SessionArchiveStamp } from "./session-archive-batch"
 import { registerBulkArchiveEchoes, releaseBulkArchiveEchoes } from "./bulk-archive-echo"
 import { getRuntimeKey } from "@/lib/runtime-switch"
+import { isRelayModeActive } from "@/lib/relay/runtime-tunnel"
 import { getErrorStatus, isAmbiguousSendFailure } from "./send-failure-classification"
 import { getStaleRunningToolMessageID } from "./materialization"
 import { promoteRestoredSessionOrdering } from "./session-ordering"
@@ -349,14 +350,21 @@ function connectionLostError(): Error {
 // blip) otherwise surface as a hard "Connection lost" toast even though the
 // pipeline recovers within a second. While waiting, run bounded health probes
 // inside the same grace window so stale disconnected state can recover quickly.
+// A relayed round trip crosses the relay twice (client -> relay -> host and
+// back), so a healthy but distant host can easily need more than 500 ms.
 const CONNECTION_GRACE_MS = 2000
+const CONNECTION_PROBE_MS = 500
+const RELAY_CONNECTION_GRACE_MS = 3000
+const RELAY_CONNECTION_PROBE_MS = 3000
 export async function waitForConnectionOrThrow(): Promise<void> {
-  const deadline = Date.now() + CONNECTION_GRACE_MS
+  const relayed = isRelayModeActive()
+  const deadline = Date.now() + (relayed ? RELAY_CONNECTION_GRACE_MS : CONNECTION_GRACE_MS)
+  const probeMs = relayed ? RELAY_CONNECTION_PROBE_MS : CONNECTION_PROBE_MS
   while (Date.now() < deadline) {
     if (useConfigStore.getState().isConnected) return
     const remainingMs = deadline - Date.now()
     if (remainingMs <= 0) break
-    if (await useConfigStore.getState().probeConnection({ timeoutMs: Math.min(500, remainingMs) })) return
+    if (await useConfigStore.getState().probeConnection({ timeoutMs: Math.min(probeMs, remainingMs) })) return
     const sleepMs = Math.min(100, deadline - Date.now())
     if (sleepMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, sleepMs))
