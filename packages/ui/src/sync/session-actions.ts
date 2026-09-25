@@ -629,7 +629,7 @@ function contextCarriersForMessage(messages: readonly Message[], messageID: stri
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
     const candidate = messages[cursor]
     if (candidate.role !== "synthetic") break
-    carriers.unshift({ type: candidate.role, metadata: candidate.metadata })
+    carriers.unshift({ metadata: candidate.metadata })
   }
   return carriers
 }
