@@ -496,6 +496,50 @@ describe('MarkdownRenderer DOM mount performance contract', () => {
     }
   });
 
+  test('lets an identifier wider than the message wrap inside its capped column', async () => {
+    const content = [
+      '| Name | Path |',
+      '| --- | --- |',
+      '| `short` | `packages/ui/src/components/chat/markdown/an-identifier-too-wide-for-this-message.ts` |',
+    ].join('\n');
+    tableProbeWidths = new Map([
+      ['short', 80],
+      ['packages/ui/src/components/chat/markdown/an-identifier-too-wide-for-this-message.ts', 1400],
+    ]);
+    const host = document.createElement('div');
+    host.style.width = '700px';
+    document.body.replaceChildren(host);
+    const root = createRoot(host);
+    const render = (isStreaming: boolean) => root.render(
+      <MarkdownRenderer content={content} messageId="table-wide-identifier" isAnimated={false} isStreaming={isStreaming} enableFileReferences={false} />,
+    );
+
+    try {
+      await act(async () => {
+        render(true);
+        await waitForSettledEffects();
+      });
+      await flushAnimationFrame();
+      const pendingScroll = host.querySelector('[data-markdown="table"]')?.parentElement;
+      expect(pendingScroll).not.toBeNull();
+      Object.defineProperty(pendingScroll, 'clientWidth', { configurable: true, value: 700 });
+      await act(async () => {
+        render(false);
+        await waitForSettledEffects();
+      });
+      await flushAnimationFrame();
+
+      const table = host.querySelector<HTMLTableElement>('[data-markdown="table"]');
+      const [fitting, capped] = Array.from(table?.querySelectorAll('td code') ?? []);
+      expect(capped?.textContent).toContain('an-identifier-too-wide');
+      expect(fitting?.classList.contains('whitespace-nowrap')).toBe(true);
+      expect(capped?.classList.contains('whitespace-nowrap')).toBe(false);
+    } finally {
+      tableProbeWidths = null;
+      await act(async () => root.unmount());
+    }
+  });
+
   test('wraps prose wider than the available message width while keeping table overflow scrollable', async () => {
     const content = [
       '| Step | Description |',

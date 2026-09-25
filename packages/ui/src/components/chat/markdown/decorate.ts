@@ -482,17 +482,29 @@ export const stabilizeMarkdownTableWidths = (root: HTMLElement): void => {
     const availableWidth = table.parentElement?.clientWidth ?? 0;
     // Without layout (for example, a hidden chat), retain the former limit.
     const maxColumnWidth = Math.max(TABLE_COLUMN_MIN_WIDTH, availableWidth || TABLE_COLUMN_FALLBACK_MAX_WIDTH);
+    const naturalWidths = columnProbes.map((probe) => Math.ceil(probe.getBoundingClientRect().width));
     return {
       table,
-      widths: columnProbes.map((probe) => Math.min(
-        maxColumnWidth,
-        Math.max(TABLE_COLUMN_MIN_WIDTH, Math.ceil(probe.getBoundingClientRect().width)),
-      )),
+      widths: naturalWidths.map((width) => Math.min(maxColumnWidth, Math.max(TABLE_COLUMN_MIN_WIDTH, width))),
+      cappedColumns: naturalWidths.map((width) => width > maxColumnWidth),
     };
   });
   measurementRoot.remove();
 
-  for (const { table, widths } of plans) {
+  for (const { table, widths, cappedColumns } of plans) {
+    // Identifiers stay on one line only while the column can hold them; in a
+    // column capped at the available width they wrap instead of overflowing
+    // into the neighbouring cell.
+    for (const row of Array.from(table.querySelectorAll<HTMLTableRowElement>('tr'))) {
+      const cells = Array.from(row.children).filter((child) => child.tagName === 'TH' || child.tagName === 'TD');
+      cells.forEach((cell, columnIndex) => {
+        const nowrap = !cappedColumns[columnIndex];
+        for (const code of Array.from(cell.querySelectorAll('code[data-markdown="inline-code"]'))) {
+          code.classList.toggle('whitespace-nowrap', nowrap);
+        }
+      });
+    }
+
     const existingColumns = Array.from(table.children).find((child) => (
       child.matches('colgroup[data-md-table-columns]')
     ));
