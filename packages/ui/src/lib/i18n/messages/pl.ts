@@ -770,6 +770,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.sessionDialogs.worktree.attachedArchivedPlural': 'Dołączone drzewa pracy zarchiwizowane.',
   'sessions.sidebar.sessionDialogs.worktree.archivedAndRemoteRemoved': 'Zarchiwizowane drzewa pracy i usunięte zdalne gałęzie.',
   'sessions.sidebar.group.worktreeMissing': 'Brak folderu worktree',
+  'sessions.sidebar.project.folderMissing': 'Folder projektu nie istnieje lub jest niedostępny',
   'sessions.sidebar.group.space': 'Izolowana przestrzeń',
   'sessions.sidebar.group.spaceStale': 'Przestrzeń nie odpowiada. To sesje, które zgłosiła ostatnio.',
   'sessions.sidebar.grouping.spaceUnnamed': 'Izolowana przestrzeń',

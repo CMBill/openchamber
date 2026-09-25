@@ -681,6 +681,7 @@ export const dict = {
   'sessions.sidebar.sessionDialogs.worktree.attachedArchivedPlural': 'Angefügte Worktrees archiviert.',
   'sessions.sidebar.sessionDialogs.worktree.archivedAndRemoteRemoved': 'Archivierte Worktrees und entfernte Remote-Branches.',
   'sessions.sidebar.group.worktreeMissing': 'Worktree-Ordner fehlt',
+  'sessions.sidebar.project.folderMissing': 'Projektordner fehlt oder ist nicht verfügbar',
   'sessions.sidebar.group.space': 'Isolierter Bereich',
   'sessions.sidebar.group.spaceStale': 'Der Bereich antwortet nicht. Das sind die Sitzungen, die er zuletzt gemeldet hat.',
   'sessions.sidebar.grouping.spaceUnnamed': 'Isolierter Bereich',

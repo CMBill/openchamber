@@ -750,6 +750,7 @@ export const dict = {
   'sessions.sidebar.sessionDialogs.worktree.attachedArchivedPlural': 'Bağlı worktree\'ler arşivlendi.',
   'sessions.sidebar.sessionDialogs.worktree.archivedAndRemoteRemoved': 'Worktree\'ler arşivlendi ve uzak branch\'ler kaldırıldı.',
   'sessions.sidebar.group.worktreeMissing': 'Worktree klasörü eksik',
+  'sessions.sidebar.project.folderMissing': 'Proje klasörü bulunamıyor veya kullanılamıyor',
   'sessions.sidebar.group.space': 'Yalıtılmış alan',
   'sessions.sidebar.group.spaceStale': 'Alan yanıt vermiyor. Bunlar en son bildirdiği oturumlar.',
   'sessions.sidebar.grouping.spaceUnnamed': 'Yalıtılmış alan',

@@ -770,6 +770,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.sessionDialogs.worktree.attachedArchivedPlural": "Прикріплені worktree заархівовано.",
   "sessions.sidebar.sessionDialogs.worktree.archivedAndRemoteRemoved": "Worktree заархівовано, віддалені гілки видалено.",
   "sessions.sidebar.group.worktreeMissing": "Теки worktree немає",
+  "sessions.sidebar.project.folderMissing": "Папка проєкту відсутня або недоступна",
   "sessions.sidebar.group.space": "Ізольований простір",
   "sessions.sidebar.group.spaceStale": "Простір не відповідає. Це сеанси, про які він повідомив востаннє.",
   "sessions.sidebar.grouping.spaceUnnamed": "Ізольований простір",

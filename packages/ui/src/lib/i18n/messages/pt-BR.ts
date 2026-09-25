@@ -770,6 +770,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.sessionDialogs.worktree.attachedArchivedPlural": "Worktrees adjuntos archivados.",
   "sessions.sidebar.sessionDialogs.worktree.archivedAndRemoteRemoved": "Worktrees archivados e branches remotas excluídas.",
   "sessions.sidebar.group.worktreeMissing": "A pasta do worktree está ausente",
+  "sessions.sidebar.project.folderMissing": "A pasta do projeto não existe ou está indisponível",
   "sessions.sidebar.group.space": "Espaço isolado",
   "sessions.sidebar.group.spaceStale": "O espaço não está respondendo. Estas são as sessões que ele informou por último.",
   "sessions.sidebar.grouping.spaceUnnamed": "Espaço isolado",
