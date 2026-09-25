@@ -160,7 +160,11 @@ interrupted arrive as their own events.
 ## Committing a revert
 
 A staged revert is a marker (`session.revert.messageID`); the transcript
-keeps the reverted messages and hides them. Sending or compacting past the
+keeps the reverted messages and hides them. Reverting or forking from a user
+message cuts at the first of the synthetic context carriers right before it,
+so the marker can name a carrier: the carriers leave with their message
+instead of riding along with the next prompt, and the reverted user message is
+the first user message at or after the marker. Sending or compacting past the
 marker commits it: OpenCode deletes the boundary message and everything after
 it in one `session.revert.committed` event, with no `message.removed` per
 record. `events.ts` translates it into a `session.revert.committed` sync

@@ -644,6 +644,19 @@ function contextCarriersForMessage(messages: readonly Message[], messageID: stri
 }
 
 /**
+ * Where a revert or fork of a user message cuts the transcript: at the first
+ * of its context carriers, so the carriers leave together with the message.
+ * Cutting at the message itself would leave them in place, and the next prompt
+ * would be sent with the reverted context attached a second time.
+ */
+function transcriptCutForMessage(messages: readonly Message[], messageID: string): string {
+  const index = messages.findIndex((message) => message.id === messageID)
+  let first = index
+  while (first > 0 && messages[first - 1].role === "synthetic") first -= 1
+  return first >= 0 ? messages[first].id : messageID
+}
+
+/**
  * Put a message's attached context (review comments, quotes, terminal
  * selections, annotations) back on the composer chips.
  *
@@ -2279,6 +2292,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     // the synthetic messages before this one and belongs back on the chips.
     submittedContextParts = contextCarriersForMessage(messages, messageId)
   }
+  const revertMessageID = transcriptCutForMessage(messages, messageId)
 
   // Optimistically set only the revert marker. Keep messages and parts in the
   // local store; visible-message selectors derive the displayed timeline from
@@ -2289,7 +2303,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const sessionIdx = sessions.findIndex((s) => s.id === sessionId)
 
   if (sessionIdx >= 0) {
-    sessions[sessionIdx] = { ...sessions[sessionIdx], revert: { messageID: messageId } }
+    sessions[sessionIdx] = { ...sessions[sessionIdx], revert: { messageID: revertMessageID } }
     store.setState({ session: sessions })
   }
 
@@ -2324,7 +2338,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     await cascadeRevertToDescendants(sessionId, targetMessage.time.created)
     // Stage only: the messages disappear behind the revert marker while the
     // dock offers Commit (finalize) or Clear (bring them back).
-    await opencodeClient.stageRevert(sessionId, messageId, { directory })
+    await opencodeClient.stageRevert(sessionId, revertMessageID, { directory })
     const revertedSession = await opencodeClient.getSession(sessionId, directory)
     const current = store.getState()
     const updated = [...current.session]
@@ -2425,7 +2439,10 @@ export async function forkAfterMessage(sessionId: string, messageId: string): Pr
   if (index < 0) throw new Error("Fork source message is not loaded")
   const nextUserMessage = messages.slice(index + 1).find((message) => message.role === "user")
 
-  const forkedSession = await opencodeClient.forkSession(sessionId, { before: nextUserMessage?.id, directory })
+  const forkedSession = await opencodeClient.forkSession(sessionId, {
+    before: nextUserMessage ? transcriptCutForMessage(messages, nextUserMessage.id) : undefined,
+    directory,
+  })
   if (isStaleRuntime(expectedRuntimeKey)) return null
   const forkDirectory = resolveSessionOwnedDirectory(forkedSession) ?? directory
   openForkedSession(store, forkedSession, forkDirectory)
@@ -2500,7 +2517,10 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
     .trim()
   const fileParts = parts.filter((part): part is FilePart => part.type === "file")
 
-  const forkedSession = await opencodeClient.forkSession(sessionId, { before: messageId, directory })
+  const forkedSession = await opencodeClient.forkSession(sessionId, {
+    before: transcriptCutForMessage(state.message[sessionId] ?? [], messageId),
+    directory,
+  })
   if (isStaleRuntime(expectedRuntimeKey)) return
   const target = createChatDraftIdentity(expectedRuntimeKey, resolveSessionOwnedDirectory(forkedSession) ?? directory, forkedSession.id)
   if (!target) throw new Error("Forked session has no composer directory")

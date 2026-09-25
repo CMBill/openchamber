@@ -1856,6 +1856,22 @@ describe("forkFromMessage composer restore", () => {
     })
   }
 
+  test("forks before the message's context carriers so the fork does not repeat them", async () => {
+    const carrier = { id: "message-ctx", sessionID: sourceSession.id, role: "synthetic", time: { created: 1 } } as Message
+    const target = { id: "message-fork", sessionID: sourceSession.id, role: "user", time: { created: 2 } } as Message
+    const source = createStore({}, {
+      session: [sourceSession],
+      message: { [sourceSession.id]: [carrier, target] },
+      part: { "message-fork": [textPart] },
+    })
+    const { forkFromMessage, setActionRefs } = await import("./session-actions")
+    setActionRefs(createChildStores([[sourceSession.directory, source]]), () => sourceSession.directory)
+
+    await forkFromMessage(sourceSession.id, "message-fork")
+
+    expect(replyCalls.find((call) => call.method === "session.fork")?.params.messageID).toBe("message-ctx")
+  })
+
   test("uses the returned project worktree when the fork has no directory", async () => {
     const forkWithProject: Session & { project: { worktree: string } } = {
       ...forkedSession, directory: "", project: { worktree: "/canonical/worktree" },
@@ -2110,6 +2126,28 @@ describe("revertToMessage passes session directory", () => {
     expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.directory).toBe("/test/project")
     expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_2")
     expect(currentStore.getState().session).toHaveLength(0)
+    expect(inputState.pendingInputText).toBe("edit this")
+  })
+
+  test("cuts the transcript at the message's context carriers so they leave with it", async () => {
+    const session = sessionFixture("session-a")
+    sessionRecords.set(session.id, session)
+    const earlier = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as Message
+    const firstCarrier = { id: "msg_ctx_1", sessionID: "session-a", role: "synthetic", time: { created: 2 } } as Message
+    const secondCarrier = { id: "msg_ctx_2", sessionID: "session-a", role: "synthetic", time: { created: 3 } } as Message
+    const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 4 } } as Message
+    const sessionStore = createStore({}, {
+      session: [session],
+      message: { "session-a": [earlier, firstCarrier, secondCarrier, targetMessage] },
+      part: { "msg_2": [{ id: "prt_2", messageID: "msg_2", type: "text", text: "edit this" } as Part] },
+    })
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(createChildStores([["/test/project", sessionStore]]), () => "/test/project")
+
+    await revertToMessage("session-a", "msg_2")
+
+    expect(replyCalls.find((call) => call.method === "session.revert.stage")?.params.messageID).toBe("msg_ctx_1")
+    expect((sessionStore.getState().session[0] as Session & { revert?: { messageID?: string } }).revert?.messageID).toBe("msg_ctx_1")
     expect(inputState.pendingInputText).toBe("edit this")
   })
 
