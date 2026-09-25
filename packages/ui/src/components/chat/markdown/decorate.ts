@@ -234,6 +234,7 @@ const decorateInlineCode = (root: HTMLElement): void => {
     if (code.getAttribute('data-markdown') !== 'inline-code') {
       code.setAttribute('data-markdown', 'inline-code');
     }
+    if (code.closest('table')) code.classList.add('whitespace-nowrap');
   }
 };
 
@@ -349,7 +350,7 @@ const buildTableMenu = (action: string, items: Array<{ key: string; label: strin
 };
 
 const TABLE_COLUMN_MIN_WIDTH = 120;
-const TABLE_COLUMN_MAX_WIDTH = 320;
+const TABLE_COLUMN_FALLBACK_MAX_WIDTH = 320;
 const TABLE_LAYOUT_ATTR = 'data-md-table-layout';
 
 const decorateTables = (root: HTMLElement, labels: DecorateLabels): void => {
@@ -402,10 +403,10 @@ const decorateTables = (root: HTMLElement, labels: DecorateLabels): void => {
     lastBodyRow?.classList.remove('border-b');
     lastBodyRow?.classList.add('border-0');
     for (const th of Array.from(table.querySelectorAll('th'))) {
-      th.classList.add('min-w-[120px]', 'max-w-[320px]', 'whitespace-normal', '[overflow-wrap:anywhere]', 'border-r', 'border-border/60', 'px-4', 'py-2.5', 'text-left', 'align-middle', 'font-semibold', 'text-foreground', 'last:border-r-0');
+      th.classList.add('min-w-[120px]', 'whitespace-normal', '[overflow-wrap:anywhere]', 'border-r', 'border-border/60', 'px-4', 'py-2.5', 'text-left', 'align-middle', 'font-semibold', 'text-foreground', 'last:border-r-0');
     }
     for (const td of Array.from(table.querySelectorAll('td'))) {
-      td.classList.add('min-w-[120px]', 'max-w-[320px]', 'whitespace-normal', '[overflow-wrap:anywhere]', 'border-r', 'border-border/60', 'px-4', 'py-2.5', 'align-middle', 'text-foreground/90', 'last:border-r-0');
+      td.classList.add('min-w-[120px]', 'whitespace-normal', '[overflow-wrap:anywhere]', 'border-r', 'border-border/60', 'px-4', 'py-2.5', 'align-middle', 'text-foreground/90', 'last:border-r-0');
     }
 
     scroll.appendChild(table);
@@ -477,13 +478,18 @@ export const stabilizeMarkdownTableWidths = (root: HTMLElement): void => {
   });
 
   root.appendChild(measurementRoot);
-  const plans = probes.map(({ table, columnProbes }) => ({
-    table,
-    widths: columnProbes.map((probe) => Math.min(
-      TABLE_COLUMN_MAX_WIDTH,
-      Math.max(TABLE_COLUMN_MIN_WIDTH, Math.ceil(probe.getBoundingClientRect().width)),
-    )),
-  }));
+  const plans = probes.map(({ table, columnProbes }) => {
+    const availableWidth = table.parentElement?.clientWidth ?? 0;
+    // Without layout (for example, a hidden chat), retain the former limit.
+    const maxColumnWidth = Math.max(TABLE_COLUMN_MIN_WIDTH, availableWidth || TABLE_COLUMN_FALLBACK_MAX_WIDTH);
+    return {
+      table,
+      widths: columnProbes.map((probe) => Math.min(
+        maxColumnWidth,
+        Math.max(TABLE_COLUMN_MIN_WIDTH, Math.ceil(probe.getBoundingClientRect().width)),
+      )),
+    };
+  });
   measurementRoot.remove();
 
   for (const { table, widths } of plans) {
