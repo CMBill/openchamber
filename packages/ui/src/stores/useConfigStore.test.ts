@@ -1837,6 +1837,25 @@ describe('useConfigStore provider persistence', () => {
     expect(state.selectionSource).toBe('manual');
   });
 
+  test('a fresh agent load re-reads after a request that started before it', async () => {
+    const responses = [deferred<TestAgent[]>(), deferred<TestAgent[]>()];
+    let calls = 0;
+    listAgentsImpl = async () => responses[calls++].promise;
+    useConfigStore.setState({ activeDirectoryKey: DIRECTORY });
+
+    const startup = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:startup' });
+    const refresh = useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:catalog', fresh: true });
+    responses[0].resolve([testAgent('build')]);
+    await startup;
+    await Promise.resolve();
+    await Promise.resolve();
+    responses[1].resolve([testAgent('build'), testAgent('plugin-agent')]);
+    await refresh;
+
+    expect(calls).toBe(2);
+    expect(useConfigStore.getState().agents.map((agent) => agent.name)).toContain('plugin-agent');
+  });
+
   test('worktree sync config applies only to its own snapshot', () => {
     const worktree = '/workspace/project-worktree';
     storage.set('oc.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
