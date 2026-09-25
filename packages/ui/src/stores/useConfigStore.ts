@@ -3811,21 +3811,20 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     const { modelsMetadata, providers } = get();
                     const cached = modelsMetadata.get(key);
+                    const model = providers
+                        .find((p) => p.id === providerId)
+                        ?.models.find((m) => m.modelID === modelId);
+
+                    // The running OpenCode's limits win over the models.dev
+                    // catalog: providers adjust them per auth (ChatGPT sign-in
+                    // serves GPT models with a 400K window, the catalog says 1M+).
                     if (cached) {
-                        return cached;
+                        if (!model || model.limit.context <= 0) return cached;
+                        return { ...cached, limit: { ...cached.limit, context: model.limit.context, output: model.limit.output } };
                     }
 
                     // Fallback: derive metadata from provider model data (covers custom providers not in models.dev)
-                    const provider = providers.find((p) => p.id === providerId);
-                    if (!provider) {
-                        return undefined;
-                    }
-                    const model = provider.models.find((m) => m.modelID === modelId);
-                    if (!model) {
-                        return undefined;
-                    }
-
-                    return deriveModelMetadata(providerId, model);
+                    return model ? deriveModelMetadata(providerId, model) : undefined;
                 },
                 getVisibleAgents: () => {
                     const { agents } = get();

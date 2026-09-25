@@ -2173,3 +2173,32 @@ describe('stale Auto selection', () => {
     expect(useSelectionStore.getState().getSessionModelSelection(sessionId)).toEqual({ providerId: 'live', modelId: 'live-model' });
   });
 });
+
+describe('getModelMetadata limits', () => {
+  test('the running OpenCode limits override the models.dev catalog', () => {
+    const live = provider('openai', 'gpt-6-astra');
+    live.models[0].limit = { context: 400_000, output: 128_000 };
+    useConfigStore.setState({
+      providers: [live],
+      modelsMetadata: new Map([['openai/gpt-6-astra', {
+        id: 'gpt-6-astra',
+        providerId: 'openai',
+        name: 'GPT-6 Astra',
+        limit: { context: 1_050_000, output: 128_000 },
+      }]]),
+    });
+
+    const metadata = useConfigStore.getState().getModelMetadata('openai', 'gpt-6-astra');
+    expect(metadata?.name).toBe('GPT-6 Astra');
+    expect(metadata?.limit).toEqual({ context: 400_000, output: 128_000 });
+  });
+
+  test('keeps the catalog limits when OpenCode reports no window', () => {
+    useConfigStore.setState({
+      providers: [provider('custom', 'local')],
+      modelsMetadata: new Map([['custom/local', { id: 'local', providerId: 'custom', limit: { context: 32_000, output: 4_000 } }]]),
+    });
+
+    expect(useConfigStore.getState().getModelMetadata('custom', 'local')?.limit).toEqual({ context: 32_000, output: 4_000 });
+  });
+});
