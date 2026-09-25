@@ -106,4 +106,10 @@ test('a slow prompt save preserves and then persists the newer blurred draft', a
   await act(async () => { settingsWrites[1](); });
   expect(prompt.value).toBe('newer\n');
   expect(persisted).toBe('newer\n');
+
+  // An edit made in another editor shows up when the window is focused again.
+  persisted = 'edited elsewhere\n';
+  await act(async () => { window.dispatchEvent(new Event('focus')); });
+  await settle();
+  expect(prompt.value).toBe('edited elsewhere\n');
 });

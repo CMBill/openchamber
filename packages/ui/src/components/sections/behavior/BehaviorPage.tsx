@@ -164,6 +164,46 @@ export const BehaviorPage: React.FC = () => {
     return () => abort.abort();
   }, []);
 
+  // AGENTS.md is often edited in another editor while this page stays open.
+  // Coming back to the window re-reads it; the editor follows only when it
+  // holds no edit of its own, and a pending edit is guarded by the save.
+  const promptRef = React.useRef(prompt);
+  promptRef.current = prompt;
+  React.useEffect(() => {
+    let abort: AbortController | null = null;
+    const refresh = async () => {
+      if (document.visibilityState !== 'visible' || !savedRef.current) return;
+      abort?.abort();
+      const controller = new AbortController();
+      abort = controller;
+      try {
+        const response = await runtimeFetch('/api/behavior/agents-md', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const data = agentsMdResponseSchema.parse(await response.json());
+        const saved = savedRef.current;
+        if (controller.signal.aborted || !saved || !data.exists) return;
+        if (data.content === agentsMdOnDiskRef.current || promptRef.current !== saved.prompt) return;
+        agentsMdOnDiskRef.current = data.content;
+        savedRef.current = { ...saved, prompt: data.content };
+        setPrompt(data.content);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) console.warn('Failed to refresh AGENTS.md:', error);
+      }
+    };
+    const onRefresh = () => { void refresh(); };
+    window.addEventListener('focus', onRefresh);
+    document.addEventListener('visibilitychange', onRefresh);
+    return () => {
+      abort?.abort();
+      window.removeEventListener('focus', onRefresh);
+      document.removeEventListener('visibilitychange', onRefresh);
+    };
+  }, []);
+
   const save = React.useCallback(async (): Promise<AutosaveResult> => {
     const saved = savedRef.current;
     if (!saved || isLoading) return AUTOSAVE_UNCHANGED;
