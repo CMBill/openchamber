@@ -277,7 +277,7 @@ describe('useConfigStore provider persistence', () => {
       sessionAgentModelSelections: new Map(),
       lastUsedProvider: null,
     });
-    useSessionUIStore.setState({ currentSessionId: null });
+    useSessionUIStore.setState({ currentSessionId: null, availableWorktreesByProject: new Map() });
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,
       directoryScoped: {},
@@ -326,6 +326,138 @@ describe('useConfigStore provider persistence', () => {
     expect(useConfigStore.getState().currentModelId).toBe('chosen-model');
     expect(useConfigStore.getState().currentVariant).toBe('high');
     expect(useConfigStore.getState().currentVariantSelection.override).toBe('high');
+  });
+
+  test('worktree catalog uses its own directory and retains its manual model across switches', async () => {
+    const worktree = '/workspace/project-catalog-worktree';
+    useSessionUIStore.setState({
+      availableWorktreesByProject: new Map([[DIRECTORY, [{
+        path: worktree,
+        projectDirectory: DIRECTORY,
+        branch: 'catalog',
+        label: 'catalog',
+      }]]]),
+    });
+    liveProviderIdsByDirectory.set(DIRECTORY, 'root');
+    liveProviderIdsByDirectory.set(worktree, 'worktree');
+    const requested: Array<string | null | undefined> = [];
+    const agentRequests: Array<string | null | undefined> = [];
+    listAgentsImpl = async (directory) => {
+      agentRequests.push(directory);
+      return [testAgent(directory === worktree ? 'worktree-agent' : 'root-agent')];
+    };
+    getProvidersForConfigImpl = async (directory) => {
+      requested.push(directory);
+      const id = liveProviderIdsByDirectory.get(directory ?? '') ?? 'unexpected';
+      return providerResponse(id, `${id}-model`);
+    };
+
+    await useConfigStore.getState().activateDirectory(worktree);
+    let state = useConfigStore.getState();
+    expect(requested).toEqual([worktree]);
+    expect(agentRequests).toEqual([worktree]);
+    expect(state.activeDirectoryKey).toBe(worktree);
+    expect(state.providers[0]?.models[0]?.modelID).toBe('worktree-model');
+    expect(state.agents[0]?.name).toBe('worktree-agent');
+    expect(state.directoryScoped[DIRECTORY]?.providers).toEqual([]);
+
+    useConfigStore.setState({
+      currentProviderId: 'worktree',
+      currentModelId: 'worktree-model',
+      selectionSource: 'manual',
+      directoryScoped: {
+        ...state.directoryScoped,
+        [worktree]: {
+          ...state.directoryScoped[worktree],
+          currentProviderId: 'worktree',
+          currentModelId: 'worktree-model',
+          selectionSource: 'manual',
+        },
+      },
+    });
+    await useConfigStore.getState().activateDirectory(DIRECTORY);
+    state = useConfigStore.getState();
+    expect(requested).toEqual([worktree, DIRECTORY]);
+    expect(agentRequests).toEqual([worktree, DIRECTORY]);
+    expect(state.providers[0]?.models[0]?.modelID).toBe('root-model');
+    expect(state.directoryScoped[worktree]?.currentModelId).toBe('worktree-model');
+
+    await useConfigStore.getState().activateDirectory(worktree);
+    state = useConfigStore.getState();
+    expect(state.providers[0]?.models[0]?.modelID).toBe('worktree-model');
+    expect(state.currentModelId).toBe('worktree-model');
+    expect(state.selectionSource).toBe('manual');
+  });
+
+  for (const cached of [false, true]) for (const override of ['high', null]) {
+    test(`manual draft model and ${override ?? 'Default'} thinking survive switching to a ${cached ? 'cached' : 'new'} worktree`, async () => {
+      const worktree = '/workspace/manual-model-worktree';
+      useSessionUIStore.setState({
+        availableWorktreesByProject: new Map([[DIRECTORY, [{
+          path: worktree,
+          projectDirectory: DIRECTORY,
+          branch: 'manual',
+          label: 'manual',
+        }]]]),
+      });
+      getProvidersForConfigImpl = async () => ({
+        providers: [providerInfo('shared')],
+        models: [model('shared', 'A', ['low']), model('shared', 'B', ['low', 'high'])],
+        default: { providerID: 'shared', id: 'A' },
+      });
+
+      if (cached) {
+        await useConfigStore.getState().activateDirectory(worktree);
+        expect(useConfigStore.getState().currentModelId).toBe('A');
+        useConfigStore.getState().setCurrentVariantOverride('low', 'low');
+      }
+      await useConfigStore.getState().activateDirectory(DIRECTORY);
+      useConfigStore.getState().setModel('B');
+      useConfigStore.getState().setCurrentVariantOverride(override, 'high');
+      expect(useConfigStore.getState().selectionSource).toBe('manual');
+
+      await useConfigStore.getState().activateDirectory(worktree, { preserveManualModel: true });
+      const state = useConfigStore.getState();
+      expect(state.activeDirectoryKey).toBe(worktree);
+      expect(state.providers[0]?.models.map((entry) => entry.modelID)).toEqual(['A', 'B']);
+      expect(state.currentModelId).toBe('B');
+      expect(state.selectionSource).toBe('manual');
+      expect(state.directoryScoped[worktree]?.currentModelId).toBe('B');
+      expect(state.currentVariant).toBe(override ?? undefined);
+      expect(state.currentVariantSelection).toEqual({ override, inherited: 'high' });
+      expect(state.directoryScoped[worktree]?.currentVariant).toBe(override ?? undefined);
+      expect(state.directoryScoped[worktree]?.currentVariantSelection).toEqual({ override, inherited: 'high' });
+    });
+  }
+
+  test('a directory absent from project discovery still loads its own catalog', async () => {
+    const directory = '/workspace/new-worktree';
+    getProvidersForConfigImpl = async (requested) => {
+      expect(requested).toBe(directory);
+      return providerResponse('new', 'new-model');
+    };
+    await useConfigStore.getState().activateDirectory(directory);
+    expect(useConfigStore.getState().activeDirectoryKey).toBe(directory);
+    expect(useConfigStore.getState().providers[0]?.models[0]?.modelID).toBe('new-model');
+  });
+
+  test('worktree catalog keeps its parent project agent default', async () => {
+    const worktree = '/workspace/project-default-worktree';
+    useSessionUIStore.setState({
+      availableWorktreesByProject: new Map([[DIRECTORY, [{
+        path: worktree,
+        projectDirectory: DIRECTORY,
+        branch: 'default',
+        label: 'default',
+      }]]]),
+    });
+    projectsState.projects[0] = { ...projectsState.projects[0], defaultAgent: 'review' };
+    liveAgents = [testAgent('build'), testAgent('review')];
+
+    await useConfigStore.getState().activateDirectory(worktree);
+
+    expect(useConfigStore.getState().activeDirectoryKey).toBe(worktree);
+    expect(useConfigStore.getState().currentAgentName).toBe('review');
   });
 
   test('loading another project agent picker leaves the active composer untouched', async () => {
@@ -1705,11 +1837,11 @@ describe('useConfigStore provider persistence', () => {
     expect(state.selectionSource).toBe('manual');
   });
 
-  test('worktree sync config applies to the project-scoped snapshot', () => {
+  test('worktree sync config applies only to its own snapshot', () => {
     const worktree = '/workspace/project-worktree';
     storage.set('oc.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
     useConfigStore.setState({
-      activeDirectoryKey: DIRECTORY,
+      activeDirectoryKey: worktree,
       providers: [provider('openai', 'gpt-5.5')],
       agents: [testAgent('build'), testAgent('review')],
       currentProviderId: 'openai',
@@ -1718,7 +1850,7 @@ describe('useConfigStore provider persistence', () => {
       selectedProviderId: 'openai',
       selectionSource: 'auto',
       directoryScoped: {
-        [DIRECTORY]: {
+        [worktree]: {
           providers: [provider('openai', 'gpt-5.5')],
           agents: [testAgent('build'), testAgent('review')],
           currentProviderId: 'openai',
@@ -1735,8 +1867,8 @@ describe('useConfigStore provider persistence', () => {
     emitSyncConfigChanged(worktree, { default_agent: 'review', model: 'openai/gpt-5.5' });
 
     const state = useConfigStore.getState();
-    expect(state.directoryScoped[DIRECTORY]?.opencodeDefaultAgent).toBe('review');
-    expect(state.directoryScoped[worktree]).toBe(undefined);
+    expect(state.directoryScoped[worktree]?.opencodeDefaultAgent).toBe('review');
+    expect(state.directoryScoped[DIRECTORY]?.opencodeDefaultAgent).toBeUndefined();
     expect(state.currentAgentName).toBe('review');
   });
 
@@ -1860,11 +1992,11 @@ describe('useConfigStore provider persistence', () => {
     expect(updates).toBe(0);
   });
 
-  test('project loadAgents preserves defaults previously applied from a worktree config event', async () => {
+  test('worktree loadAgents preserves defaults previously applied from its config event', async () => {
     const worktree = '/workspace/project-worktree';
     storage.set('oc.worktreeProjectMap', JSON.stringify({ [worktree]: DIRECTORY }));
     useConfigStore.setState({
-      activeDirectoryKey: DIRECTORY,
+      activeDirectoryKey: worktree,
       providers: [provider('openai', 'gpt-5.5')],
       agents: [testAgent('build'), testAgent('review')],
       currentProviderId: 'openai',
@@ -1873,7 +2005,7 @@ describe('useConfigStore provider persistence', () => {
       selectedProviderId: 'openai',
       selectionSource: 'auto',
       directoryScoped: {
-        [DIRECTORY]: {
+        [worktree]: {
           providers: [provider('openai', 'gpt-5.5')],
           agents: [testAgent('build'), testAgent('review')],
           currentProviderId: 'openai',
@@ -1889,11 +2021,11 @@ describe('useConfigStore provider persistence', () => {
     liveAgents = [testAgent('build'), testAgent('review')];
 
     emitSyncConfigChanged(worktree, { default_agent: 'review', model: 'openai/gpt-5.5' });
-    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:preserveWorktreeDefaults' });
+    await useConfigStore.getState().loadAgents({ directory: worktree, source: 'test:preserveWorktreeDefaults' });
 
     const state = useConfigStore.getState();
-    expect(state.directoryScoped[DIRECTORY]?.opencodeDefaultAgent).toBe('review');
-    expect(state.directoryScoped[DIRECTORY]?.opencodeDefaultModel).toBe('openai/gpt-5.5');
+    expect(state.directoryScoped[worktree]?.opencodeDefaultAgent).toBe('review');
+    expect(state.directoryScoped[worktree]?.opencodeDefaultModel).toBe('openai/gpt-5.5');
     expect(state.opencodeDefaultAgent).toBe('review');
     expect(state.opencodeDefaultModel).toBe('openai/gpt-5.5');
   });

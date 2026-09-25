@@ -679,8 +679,11 @@ const resolveSessionDirectory = (
   return resolution.directory
 }
 
-const activateConfigForDirectory = async (directory: string | null | undefined): Promise<void> => {
-  await useConfigStore.getState().activateDirectory(normalizePath(directory))
+const activateConfigForDirectory = async (
+  directory: string | null | undefined,
+  options?: { preserveManualModel?: boolean },
+): Promise<void> => {
+  await useConfigStore.getState().activateDirectory(normalizePath(directory), options)
 }
 
 const applyDraftTargetSelectionDefaults = (
@@ -707,20 +710,24 @@ const applyDraftTargetSelectionDefaults = (
           normalizePath(draft.directoryOverride ?? null),
         )))
 
-  const configDirectory = normalizePath(selectedProject?.path ?? null)
-    ?? normalizePath(draft.directoryOverride ?? null)
+  const configDirectory = normalizePath(draft.directoryOverride ?? null)
+    ?? normalizePath(selectedProject?.path ?? null)
 
   if (previousDraft?.open && previousDraft.draftId === draft.draftId && previousDraft.target === draft.target) {
     const previousProject = previousDraft.target !== 'project' ? null
       : projects.find((project) => project.id === previousDraft.selectedProjectId)
         ?? resolveDraftProjectForDirectory(projects, availableWorktreesByProject, normalizePath(previousDraft.directoryOverride ?? null))
-    const previousConfigDirectory = normalizePath(previousProject?.path ?? previousDraft.directoryOverride ?? null)
+    const previousConfigDirectory = normalizePath(previousDraft.directoryOverride ?? null)
+      ?? normalizePath(previousProject?.path ?? null)
     if (previousConfigDirectory === configDirectory) return
   }
 
   const runtimeKey = getRuntimeKey()
   const revision = ++draftDefaultsRevision
+  const projectChanged = !previousDraft || previousDraft.target !== draft.target
+    || previousDraft.selectedProjectId !== draft.selectedProjectId
   const applyDefaults = () => {
+    if (!projectChanged) return
     const currentProject = selectedProject?.path
       ? useProjectsStore.getState().projects.find((project) => normalizePath(project.path) === normalizePath(selectedProject.path))
       : undefined
@@ -730,7 +737,7 @@ const applyDraftTargetSelectionDefaults = (
       projectDefaultVariant: currentProject?.defaultVariant,
     })
   }
-  const activation = activateConfigForDirectory(configDirectory)
+  const activation = activateConfigForDirectory(configDirectory, { preserveManualModel: !projectChanged && draft.target === 'project' })
   applyDefaults()
   void activation.then(() => {
     const current = useSessionUIStore.getState()

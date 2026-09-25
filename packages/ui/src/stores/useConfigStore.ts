@@ -762,13 +762,8 @@ const resolveInitialDirectoryKey = (): string => {
     return toConfigDirectoryKey(directory);
 };
 
-// Persisted worktree→project mapping. The runtime worktree map
-// (availableWorktreesByProject) is populated by async git discovery and isn't
-// ready when initializeApp runs on startup — so without this, a worktree's first
-// config load can't resolve to its project and duplicates the project's load.
-// We cache resolved mappings to localStorage so subsequent launches resolve the
-// project synchronously at init time. worktree→project is effectively immutable,
-// so a cached entry is safe to trust.
+// Persisted worktree→project mapping for project-level defaults. Config catalogs
+// themselves are scoped to the worktree's own directory.
 const WORKTREE_PROJECT_MAP_KEY = 'oc.worktreeProjectMap.v2';
 const LEGACY_WORKTREE_PROJECT_MAP_KEY = 'oc.worktreeProjectMap';
 const MAX_WORKTREE_PROJECT_RUNTIME_MAPS = 8;
@@ -874,7 +869,8 @@ const getProjectDefaultsForConfigDirectory = (directory: string | null | undefin
     const session = useSessionUIStore.getState();
     if (!session.currentSessionId && session.newSessionDraft?.open && session.newSessionDraft.target === 'chat'
         && toDirectoryKey(configDirectory) === useConfigStore.getState().activeDirectoryKey) return {};
-    const project = useProjectsStore.getState().projects.find((entry) => normalizeConfigPath(entry.path) === configDirectory);
+    const projectDirectory = resolveProjectDirectory(configDirectory);
+    const project = useProjectsStore.getState().projects.find((entry) => normalizeConfigPath(entry.path) === projectDirectory);
     return {
         projectDefaultAgent: normalizeOptionalString(project?.defaultAgent),
         projectDefaultModel: normalizeOptionalString(project?.defaultModel),
@@ -882,14 +878,7 @@ const getProjectDefaultsForConfigDirectory = (directory: string | null | undefin
     };
 };
 
-/**
- * Map a directory to its CONFIG scope. Providers/agents/defaults are defined at
- * the PROJECT level (opencode.json), so a worktree must inherit its parent
- * project's config instead of maintaining — and re-fetching — its own
- * per-worktree snapshot. Returns the owning project's path when the directory is
- * a known worktree, else the directory unchanged.
- */
-const resolveConfigDirectory = (directory: string | null | undefined): string | null => {
+const resolveProjectDirectory = (directory: string | null | undefined): string | null => {
     const dir = normalizeConfigPath(directory);
     const projects = getKnownProjectDirectories();
     if (!dir) return null;
@@ -911,19 +900,18 @@ const resolveConfigDirectory = (directory: string | null | undefined): string | 
             rememberWorktreeProject(dir, projectPath);
             return projectPath;
         }
-    } catch {
-        return null;
-    }
+    } catch { /* The cached mapping, if any, was checked above. */ }
     return null;
 };
+
+const resolveConfigDirectory = normalizeConfigPath;
 
 const toConfigDirectoryKey = (directory: string | null | undefined): string =>
     toDirectoryKey(resolveConfigDirectory(directory));
 
 // Runtime freshness tracking (NOT persisted) for the stale-while-revalidate
 // background refresh, keyed by config-directory key. Prevents re-fetching
-// project-scoped providers/agents we just loaded — e.g. initializeApp loading a
-// project, then activateDirectory firing for the same project moments later.
+// catalogs we just loaded for the same project or worktree.
 const _providersLoadedAt = new Map<string, number>();
 const _agentsLoadedAt = new Map<string, number>();
 const CONFIG_REFRESH_TTL_MS = 30_000;
@@ -1242,7 +1230,7 @@ interface ConfigStore {
     setSummarizeCharacterThreshold: (threshold: number) => void;
     setSummarizeMaxLength: (maxLength: number) => void;
 
-    activateDirectory: (directory: string | null | undefined) => Promise<void>;
+    activateDirectory: (directory: string | null | undefined, options?: { preserveManualModel?: boolean }) => Promise<void>;
 
     loadProviders: (options?: { directory?: string | null; source?: string }) => Promise<void>;
     loadSessionDefaults: () => Promise<boolean>;
@@ -1637,12 +1625,10 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                     return 500;
                 })(),
-                activateDirectory: async (directory) => {
+                activateDirectory: async (directory, options) => {
                     const runtimeContext = captureConfigRuntimeContext();
-                    // Resolve the worktree to its owning project up-front so the
-                    // active key + snapshot key always match and stay project-scoped.
-                    // Everything below operates on this key unchanged; the OpenCode
-                    // working directory (opencodeClient.getDirectory()) is separate.
+                    // Keep the active catalog and snapshot scoped to the actual
+                    // directory, including worktrees with their own opencode.json.
                     const configDirectory = resolveConfigDirectory(directory);
                     if (!configDirectory) {
                         markStartupTrace('activateDirectory:skippedUnknownDirectory', { directory });
@@ -1654,46 +1640,67 @@ export const useConfigStore = create<ConfigStore>()(
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];
+                        const carryManualModel = options?.preserveManualModel && state.activeDirectoryKey !== directoryKey
+                            && state.selectionSource === 'manual' && Boolean(state.currentProviderId && state.currentModelId);
+                        const manualModel = carryManualModel ? {
+                            currentProviderId: state.currentProviderId,
+                            currentModelId: state.currentModelId,
+                            currentVariant: state.currentVariant,
+                            currentVariantSelection: state.currentVariantSelection,
+                            selectionSource: 'manual' as const,
+                        } : null;
                         if (snapshot) {
                             snapshotHadProviders = snapshot.providers.length > 0;
                             snapshotHadAgents = snapshot.agents.length > 0;
                             return {
                                 activeDirectoryKey: directoryKey,
+                                directoryScoped: manualModel ? {
+                                    ...state.directoryScoped,
+                                    [directoryKey]: { ...snapshot, ...manualModel },
+                                } : state.directoryScoped,
                                 providers: snapshot.providers,
                                 agents: snapshot.agents,
                                 providersLoaded: snapshot.providersLoaded ?? snapshot.providers.length > 0,
                                 agentsLoaded: snapshot.agentsLoaded ?? snapshot.agents.length > 0,
-                                currentProviderId: snapshot.currentProviderId,
-                                currentModelId: snapshot.currentModelId,
-                                currentVariant: snapshot.currentVariant,
-                                currentVariantSelection: snapshot.currentVariantSelection ?? { override: undefined, inherited: snapshot.currentVariant },
+                                currentProviderId: manualModel?.currentProviderId ?? snapshot.currentProviderId,
+                                currentModelId: manualModel?.currentModelId ?? snapshot.currentModelId,
+                                currentVariant: manualModel ? manualModel.currentVariant : snapshot.currentVariant,
+                                currentVariantSelection: manualModel?.currentVariantSelection ?? snapshot.currentVariantSelection ?? { override: undefined, inherited: snapshot.currentVariant },
                                 currentAgentName: snapshot.currentAgentName,
                                 selectedProviderId: snapshot.selectedProviderId,
                                 agentModelSelections: snapshot.agentModelSelections,
                                 defaultProviders: snapshot.defaultProviders,
                                 opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
                                 opencodeDefaultModel: snapshot.opencodeDefaultModel,
-                                selectionSource: snapshot.selectionSource ?? "auto",
+                                selectionSource: manualModel?.selectionSource ?? snapshot.selectionSource ?? "auto",
                                 agentSelectionSource: snapshot.agentSelectionSource ?? "auto",
                             };
                         }
 
                         return {
                             activeDirectoryKey: directoryKey,
+                            directoryScoped: manualModel ? {
+                                ...state.directoryScoped,
+                                [directoryKey]: {
+                                    providers: [], agents: [], agentModelSelections: {}, defaultProviders: {},
+                                    selectedProviderId: '', currentAgentName: undefined, ...manualModel,
+                                },
+                            } : state.directoryScoped,
                             providers: [],
                             agents: [],
                             providersLoaded: false,
                             agentsLoaded: false,
-                            currentProviderId: "",
-                            currentModelId: "",
-                            currentVariantSelection: { override: undefined, inherited: undefined },
+                            currentProviderId: manualModel?.currentProviderId ?? "",
+                            currentModelId: manualModel?.currentModelId ?? "",
+                            currentVariant: manualModel?.currentVariant,
+                            currentVariantSelection: manualModel?.currentVariantSelection ?? { override: undefined, inherited: undefined },
                             currentAgentName: undefined,
                             selectedProviderId: "",
                             agentModelSelections: {},
                             defaultProviders: {},
                             opencodeDefaultAgent: undefined,
                             opencodeDefaultModel: undefined,
-                            selectionSource: "auto",
+                            selectionSource: manualModel?.selectionSource ?? "auto",
                             agentSelectionSource: "auto",
                         };
                     });
@@ -1788,8 +1795,6 @@ export const useConfigStore = create<ConfigStore>()(
                 loadProviders: async (options) => {
                     const runtimeContext = captureConfigRuntimeContext();
                     const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
-                    // Providers are project-scoped: resolve a worktree to its project
-                    // so it reuses one shared snapshot instead of its own.
                     const configDirectory = resolveConfigDirectory(requestedDirectory);
                     if (!configDirectory) {
                         markStartupTrace('loadProviders:skippedUnknownDirectory', { requestedDirectory, source: options?.source ?? 'unknown' });
@@ -2343,8 +2348,6 @@ export const useConfigStore = create<ConfigStore>()(
                 loadAgents: async (options) => {
                     const runtimeContext = captureConfigRuntimeContext();
                     const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
-                    // Agents are project-scoped: resolve a worktree to its project
-                    // so it reuses one shared snapshot instead of its own.
                     const configDirectory = resolveConfigDirectory(requestedDirectory);
                     if (!configDirectory) {
                         markStartupTrace('loadAgents:skippedUnknownDirectory', { requestedDirectory, source: options?.source ?? 'unknown' });
@@ -3655,8 +3658,8 @@ export const useConfigStore = create<ConfigStore>()(
 
                             // Config (providers/agents/defaults) lives at the PROJECT level. If the
                             // app starts on a worktree directory, load config under the owning
-                            // project's key so the initial draft — which activates the project — finds
-                            // a ready snapshot instead of triggering a second provider/agent load.
+                            // initial directory's key so its draft finds a ready snapshot
+                            // instead of triggering a second provider/agent load.
                             const initialDirectory = opencodeClient.getDirectory()
                                 ?? useDirectoryStore.getState().currentDirectory
                                 ?? fromDirectoryKey(get().activeDirectoryKey);
@@ -3665,7 +3668,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 useSessionUIStore.getState().availableWorktreesByProject,
                                 initialDirectory ?? null,
                             );
-                            const resolvedInitialDirectory = resolveConfigDirectory(resolvedProject?.path ?? initialDirectory ?? null);
+                            const resolvedInitialDirectory = (resolvedProject || resolveProjectDirectory(initialDirectory))
+                                ? resolveConfigDirectory(initialDirectory)
+                                : null;
                             const configDirectory = resolvedInitialDirectory ?? getFallbackProjectDirectory();
                             if (!configDirectory) {
                                 markStartupTrace('initializeApp:noProjectConfigDirectory');
