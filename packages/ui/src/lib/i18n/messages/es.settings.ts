@@ -648,6 +648,7 @@ export const settingsDict = {
   "settings.behavior.page.responseStyle.customPlaceholder": "Escribe la instrucción que se agregará al primer mensaje...",
   "settings.behavior.page.toast.saved": "Comportamiento guardado correctamente",
   "settings.behavior.page.toast.saveFailed": "Error al guardar el comportamiento",
+  "settings.behavior.page.toast.agentsMdChangedOnDisk": "AGENTS.md se modificó fuera de OpenChamber, así que tu cambio no se guardó. Cópialo y vuelve a abrir esta página para cargar el archivo actual.",
   "settings.commands.sidebar.title": "Comandos",
   "settings.commands.sidebar.total": "Total {count}",
   "settings.commands.sidebar.empty.title": "No hay comandos configurados",

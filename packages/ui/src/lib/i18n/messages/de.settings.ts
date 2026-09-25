@@ -632,6 +632,7 @@ export const settingsDict = {
   'settings.behavior.page.responseStyle.customPlaceholder': 'Schreiben Sie die Anweisung, die der ersten Nachricht hinzugefügt werden soll...',
   'settings.behavior.page.toast.saved': 'Verhalten erfolgreich gespeichert',
   'settings.behavior.page.toast.saveFailed': 'Verhalten konnte nicht gespeichert werden',
+  'settings.behavior.page.toast.agentsMdChangedOnDisk': 'AGENTS.md wurde außerhalb von OpenChamber geändert, daher wurde deine Änderung nicht gespeichert. Kopiere sie und öffne diese Seite erneut, um die aktuelle Datei zu laden.',
   'settings.commands.sidebar.title': 'Befehle',
   'settings.commands.sidebar.total': 'Gesamt {count}',
   'settings.commands.sidebar.empty.title': 'Keine Befehle konfiguriert',

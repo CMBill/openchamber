@@ -912,7 +912,10 @@ The VS Code extension owns its separate Git and proxy implementation.
 
 The behavior `GET /api/behavior/agents-md` response includes `path`, the effective
 server-side filename, whether or not the file exists. Settings displays this
-path without deriving a directory from the browser environment.
+path without deriving a directory from the browser environment. A `PUT` may send
+`expectedContent` (the content the editor loaded, `null` for no file); when the
+file on disk no longer matches, the write is refused with `409` and code
+`AGENTS_MD_CONFLICT` instead of overwriting an edit made elsewhere.
 
 ## Managed OpenCode config layer (managed-config-file.js)
 

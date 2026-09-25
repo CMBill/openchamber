@@ -186,6 +186,7 @@ export const settingsDict = {
   'settings.behavior.page.section.systemPrompt': 'Globalny AGENTS.md',
   'settings.behavior.page.title': 'Zachowanie',
   'settings.behavior.page.toast.saveFailed': 'Nie udało się zapisać zachowania',
+  'settings.behavior.page.toast.agentsMdChangedOnDisk': 'Plik AGENTS.md został zmieniony poza OpenChamber, więc Twoja zmiana nie została zapisana. Skopiuj ją, a potem otwórz tę stronę ponownie, aby wczytać aktualny plik.',
   'settings.behavior.page.toast.saved': 'Zachowanie zostało zapisane pomyślnie',
   'settings.behavior.page.warning.description': 'Zmiany wprowadzone tutaj aktualizują {path}. OpenCode uwzględnia również reguły AGENTS.md na poziomie projektu, jeśli istnieją.',
   'settings.behavior.page.warning.title': 'Reguły globalne są łączone z regułami projektu',

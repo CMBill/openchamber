@@ -566,6 +566,7 @@ export const settingsDict = {
   'settings.behavior.page.responseStyle.customPlaceholder': 'Écrivez l\'instruction à ajouter au premier message...',
   'settings.behavior.page.toast.saved': 'Comportement enregistré avec succès',
   'settings.behavior.page.toast.saveFailed': 'Échec de l\'enregistrement du comportement',
+  'settings.behavior.page.toast.agentsMdChangedOnDisk': 'AGENTS.md a été modifié en dehors d\'OpenChamber, votre modification n\'a donc pas été enregistrée. Copiez-la, puis rouvrez cette page pour charger le fichier actuel.',
   'settings.commands.sidebar.title': 'Commandes',
   'settings.commands.sidebar.total': 'Total {count}',
   'settings.commands.sidebar.empty.title': 'Aucune commande configurée',
