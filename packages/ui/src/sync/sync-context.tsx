@@ -691,10 +691,17 @@ export function applySessionStatusSnapshot(
   store.setState((state: DirectoryStore) => {
     const current = state.session_status ?? {}
     let next: Record<string, SessionStatus> | undefined
+    let nextInvalidated: Record<string, true> | undefined
     const draft = () => (next ??= { ...current })
 
     for (const sessionId of candidateSessionIds) {
       const incoming = toSessionStatus(snapshot[sessionId])
+      if (mode === "authoritative" && state.sessionStatusInvalidated?.[sessionId]) {
+        // The successful snapshot supersedes the archive's discarded status.
+        nextInvalidated ??= { ...state.sessionStatusInvalidated }
+        delete nextInvalidated[sessionId]
+        changed = true
+      }
 
       if (incoming && incoming.type !== "idle") {
         // Confirm or raise active status (catches a busy event the SSE missed).
@@ -719,7 +726,11 @@ export function applySessionStatusSnapshot(
       }
     }
 
-    return next ? { session_status: next } : state
+    if (!next && !nextInvalidated) return state
+    const patch: Partial<DirectoryStore> = {}
+    if (next) patch.session_status = next
+    if (nextInvalidated) patch.sessionStatusInvalidated = nextInvalidated
+    return patch
   })
 
   return changed
@@ -732,11 +743,16 @@ async function resyncDirectorySessionStatuses(
   mode: StatusSnapshotMode,
   isStale?: () => boolean,
 ): Promise<DirectorySessionStatusSnapshot | null> {
+  const invalidatedAtStart = store.getState().sessionStatusInvalidated
   const nextStatuses = await opencodeClient.getActiveSessionStatuses(directory)
   // null = fetch failed; preserve existing state. {} or populated = a snapshot
   // of active sessions — reconciled per `mode` (absence ≠ idle under monotonic).
   if (nextStatuses === null || isStale?.()) return null
-  applySessionStatusSnapshot(store, nextStatuses, candidateSessionIds, mode)
+  const currentInvalidated = store.getState().sessionStatusInvalidated
+  const eligibleIds = candidateSessionIds.filter((id) => (
+    !currentInvalidated?.[id] || currentInvalidated === invalidatedAtStart
+  ))
+  applySessionStatusSnapshot(store, nextStatuses, eligibleIds, mode)
   if (mode === "authoritative") {
     store.setState({ sessionStatusReady: true })
     applyGlobalSessionStatusSnapshot(directory, nextStatuses, getDirectoryOwnedSessionIds(directory, store.getState().session))
@@ -3054,12 +3070,16 @@ export function useSessionStatus(sessionID: string, directory?: string) {
 }
 
 /** Whether this directory has received a successful authoritative status snapshot. */
-export function useSessionStatusSnapshotReady(directory?: string): boolean {
+export function useSessionStatusSnapshotReady(directory?: string, sessionID?: string): boolean {
   const store = useDirectoryStore(directory)
-  const getSnapshot = useCallback(() => store.getState().sessionStatusReady === true, [store])
+  const getSnapshot = useCallback(() => {
+    const state = store.getState()
+    return state.sessionStatusReady === true && (!sessionID || !state.sessionStatusInvalidated?.[sessionID])
+  }, [sessionID, store])
   const subscribe = useCallback((notify: () => void) => store.subscribe((state, previous) => {
-    if (state.sessionStatusReady !== previous.sessionStatusReady) notify()
-  }), [store])
+    if (state.sessionStatusReady !== previous.sessionStatusReady
+      || (sessionID && state.sessionStatusInvalidated?.[sessionID] !== previous.sessionStatusInvalidated?.[sessionID])) notify()
+  }), [sessionID, store])
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 

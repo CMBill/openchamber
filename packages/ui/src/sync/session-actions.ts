@@ -416,7 +416,8 @@ function hasAuthoritativeIdleCoverage(sessionId: string, stores: ChildStoreManag
     ?? findSessionDirectoryInChildStores(sessionId)
   if (!directory) return false
   const state = stores.getChild(directory)?.getState()
-  return state?.sessionStatusReady === true || state?.session_status[sessionId]?.type === "idle"
+  return (state?.sessionStatusReady === true && !state.sessionStatusInvalidated?.[sessionId])
+    || state?.session_status[sessionId]?.type === "idle"
 }
 
 function resolveKnownSessionDirectory(sessionId: string): string | null {
@@ -1096,7 +1097,7 @@ async function cleanupReviewMetadataBeforeDelete(
 }
 
 /** Remove a server-confirmed session from every live child store that has it. */
-function removeSessionFromLiveStores(sessionId: string, preferredDirectory?: string): SessionListSnapshot[] {
+function removeSessionFromLiveStores(sessionId: string, preferredDirectory?: string, archive = false): SessionListSnapshot[] {
   if (!_childStores) return []
 
   const snapshots: SessionListSnapshot[] = []
@@ -1122,10 +1123,16 @@ function removeSessionFromLiveStores(sessionId: string, preferredDirectory?: str
       continue
     }
     snapshots.push({ directory })
-    store.setState({
+    const patch: Partial<ReturnType<DirectoryStoreApi["getState"]>> = {
       session: current.session.filter((session) => session.id !== sessionId),
       ...sessionMutationPatch(current, sessionId, true),
-    })
+    }
+    if (archive) {
+      patch.session_status = { ...current.session_status }
+      delete patch.session_status[sessionId]
+      patch.sessionStatusInvalidated = { ...current.sessionStatusInvalidated, [sessionId]: true }
+    }
+    store.setState(patch)
   }
 
   return snapshots
@@ -1139,7 +1146,7 @@ function removeSessionFromLiveStores(sessionId: string, preferredDirectory?: str
  * the sidebar — once per session, which is what made archiving a worktree's
  * sessions block the main thread for seconds.
  */
-function removeSessionsFromLiveStores(sessionIds: Iterable<string>, preferredDirectory?: string): SessionListSnapshot[] {
+function removeSessionsFromLiveStores(sessionIds: Iterable<string>, preferredDirectory?: string, archive = false): SessionListSnapshot[] {
   const ids = new Set(sessionIds)
   if (!_childStores || ids.size === 0) return []
 
@@ -1166,10 +1173,19 @@ function removeSessionsFromLiveStores(sessionIds: Iterable<string>, preferredDir
     if (removed.length === 0) continue
 
     snapshots.push({ directory })
-    store.setState({
+    const patch: Partial<ReturnType<DirectoryStoreApi["getState"]>> = {
       session: current.session.filter((session) => !ids.has(session.id)),
       ...sessionsMutationPatch(current, removed, true),
-    })
+    }
+    if (archive) {
+      patch.session_status = { ...current.session_status }
+      patch.sessionStatusInvalidated = { ...current.sessionStatusInvalidated }
+      for (const id of removed) {
+        delete patch.session_status[id]
+        patch.sessionStatusInvalidated[id] = true
+      }
+    }
+    store.setState(patch)
   }
 
   return snapshots
@@ -1195,6 +1211,13 @@ function finalizeConfirmedSessionDeletion(
   expectedRuntimeKey = getRuntimeKey(),
 ): void {
   const snapshots = removeSessionFromLiveStores(sessionId, sessionDirectory)
+  for (const store of _childStores?.children.values() ?? []) {
+    const invalidated = store.getState().sessionStatusInvalidated
+    if (!invalidated?.[sessionId]) continue
+    const next = { ...invalidated }
+    delete next[sessionId]
+    store.setState({ sessionStatusInvalidated: next })
+  }
   invalidateSessionLoads(sessionId, [...snapshots.map((snapshot) => snapshot.directory), sessionDirectory])
   useGlobalSessionsStore.getState().removeSessions([sessionId])
   const ui = useSessionUIStore.getState()
@@ -1407,7 +1430,7 @@ export async function archiveSession(sessionId: string, expectedRuntimeKey = get
       throw new Error("archive failed: server did not return the archived session")
     }
     const archived = withArchivedAt(sessionId, stamp.archivedAt)
-    const snapshots = removeSessionFromLiveStores(sessionId, sessionDirectory)
+    const snapshots = removeSessionFromLiveStores(sessionId, sessionDirectory, true)
     invalidateSessionLoads(sessionId, [...snapshots.map((snapshot) => snapshot.directory), sessionDirectory])
     if (archived) useGlobalSessionsStore.getState().upsertSession(archived)
     const ui = useSessionUIStore.getState()
@@ -1574,7 +1597,7 @@ function commitArchivedSessions(stamps: SessionArchiveStamp[], directory: string
 
   const ids = stamps.map((stamp) => stamp.id)
   const archived = stamps.flatMap((stamp) => withArchivedAt(stamp.id, stamp.archivedAt) ?? [])
-  const snapshots = removeSessionsFromLiveStores(ids, directory)
+  const snapshots = removeSessionsFromLiveStores(ids, directory, true)
   const directories = [...snapshots.map((snapshot) => snapshot.directory), directory]
   for (const id of ids) invalidateSessionLoads(id, directories)
 
@@ -1609,6 +1632,27 @@ export async function unarchiveSession(sessionId: string, expectedRuntimeKey = g
     if (restored) useGlobalSessionsStore.getState().upsertSession(restored)
     if (sessionDirectory) registerSessionDirectory(sessionId, sessionDirectory)
     promoteRestoredSessionOrdering(sessionId)
+    // Archive discarded this session's status. An older directory snapshot
+    // cannot certify it idle after restore; only a fresh live read can.
+    const store = sessionDirectory ? _childStores?.getChild(sessionDirectory) : undefined
+    if (store) {
+      const before = store.getState()
+      // The restore already committed. A rejected status read is unknown, not
+      // an action failure or a reason to mark this session idle.
+      const statuses = await opencodeClient.getActiveSessionStatuses().catch(() => null)
+      if (!isStaleRuntime(expectedRuntimeKey) && statuses !== null) {
+        store.setState((current) => {
+          if (current.sessionStatusInvalidated !== before.sessionStatusInvalidated
+            || current.session_status[sessionId] !== before.session_status[sessionId]) return current
+          const invalidated = { ...current.sessionStatusInvalidated }
+          delete invalidated[sessionId]
+          return {
+            session_status: { ...current.session_status, [sessionId]: statuses[sessionId] ?? { type: "idle" } },
+            sessionStatusInvalidated: invalidated,
+          }
+        })
+      }
+    }
     return true
   } catch (error) {
     console.error("[session-actions] unarchiveSession failed", error)
