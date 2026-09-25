@@ -140,6 +140,8 @@ mock.module('@/stores/useProjectsStore', () => ({
   },
 }));
 
+let directoryAvailability: 'available' | 'missing' | 'unknown' = 'available';
+
 mock.module('@/lib/opencode/client', () => ({
   OpencodeApiError: Error,
   normalizeOpencodeError: (operation: string, error: unknown) => new Error(`${operation}: ${String(error)}`),
@@ -183,6 +185,7 @@ mock.module('@/lib/opencode/client', () => ({
       return {};
     }),
     clearConfigCache: mock(() => undefined),
+    getDirectoryAvailability: mock(async () => directoryAvailability),
   },
 }));
 
@@ -1307,6 +1310,21 @@ describe('useConfigStore provider persistence', () => {
     await useConfigStore.getState().initializeApp();
 
     expect(useConfigStore.getState().lastInitFailure).toEqual({ step: 'openCodeUnavailable', message: null });
+  }, 10_000);
+
+  test('a project whose folder is gone does not block startup', async () => {
+    listAgentsImpl = async () => {
+      throw new Error('agent.list failed (500)');
+    };
+    directoryAvailability = 'missing';
+    try {
+      await useConfigStore.getState().initializeApp();
+    } finally {
+      directoryAvailability = 'available';
+    }
+
+    expect(useConfigStore.getState().isInitialized).toBe(true);
+    expect(useConfigStore.getState().lastInitFailure).toBeNull();
   }, 10_000);
 
   test('a failed agent load records its error text, and a later success clears it', async () => {

@@ -3708,12 +3708,18 @@ export const useConfigStore = create<ConfigStore>()(
                                 // A broken config belongs to this one project. Finish startup
                                 // so the user can read the error and move to another project;
                                 // any other failure keeps the startup retry loop going.
+                                // A project whose folder is gone (an unplugged drive) is the
+                                // same: the app opens and the other projects stay reachable.
                                 const configError = get().projectConfigErrors[configDirectoryKey];
-                                if (!configError) {
+                                if (configError) {
+                                    markStartupTrace('initializeApp:projectConfigInvalid', { configDirectoryKey, name: configError.name });
+                                } else if (await opencodeClient.getDirectoryAvailability(configDirectory) === 'missing') {
+                                    if (!isConfigRuntimeContextCurrent(runtimeContext)) return;
+                                    markStartupTrace('initializeApp:projectDirectoryMissing', { configDirectoryKey });
+                                } else {
                                     set({ lastInitFailure: { step: 'loadAgents', message: _agentsLoadErrors.get(configDirectoryKey) || null } });
                                     return;
                                 }
-                                markStartupTrace('initializeApp:projectConfigInvalid', { configDirectoryKey, name: configError.name });
                             }
                             set({ isInitialized: true, isConnected: true, hasEverConnected: true, connectionPhase: "connected", lastInitFailure: null });
                             void get().prewarmProjectConfigs(configDirectory);
