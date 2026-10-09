@@ -1,6 +1,7 @@
 import { isCompleteIdentity } from '@/lib/api/git-identity';
 import React from 'react';
 import { Icon } from '@/components/icon/Icon';
+import { useIsContributorWorktree } from '@/hooks/useIsContributorWorktree';
 
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -157,6 +158,7 @@ export const MobileChangesPane: React.FC<MobileChangesPaneProps> = ({ rootDirect
   const { rootIsGitRepo, gitDirectory, nestedRepos } = repository;
   const currentDirectory = gitDirectory ?? rootDirectory;
   const status = useGitStatus(currentDirectory || null);
+  const choosesPushDestination = useIsContributorWorktree(currentDirectory);
   const branches = useGitBranches(currentDirectory || null);
   const currentIdentity = useGitIdentity(currentDirectory || null);
   const [isRepositoryConfigurationOpen, setRepositoryConfigurationOpen] = React.useState(false);
@@ -1148,6 +1150,7 @@ export const MobileChangesPane: React.FC<MobileChangesPaneProps> = ({ rootDirect
             trackingRemoteName={status?.tracking?.split('/')[0]}
             trackingBranch={status?.tracking}
             hasUncommittedChanges={hasUncommittedTrackedChanges(changeEntries)}
+            choosesPushDestination={choosesPushDestination}
           />
         </div>
       )}
