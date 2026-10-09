@@ -110,9 +110,6 @@ mock.module("@/lib/opencode/client", () => ({
       sessionRecords.set(sessionId, { ...(record ?? sessionFixture(sessionId)), revert: { messageID: messageId } })
       return { messageID: messageId }
     }),
-    commitRevert: mock(async (sessionId: string, directory?: string | null) => {
-      replyCalls.push({ method: "session.revert.commit", params: { sessionID: sessionId, directory } })
-    }),
     forkSession: mock(async (
       sessionId: string,
       options?: { before?: string; directory?: string | null },

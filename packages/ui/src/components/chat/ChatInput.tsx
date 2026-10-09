@@ -50,8 +50,8 @@ import { buildBtwSyntheticTexts, preparePendingBtwSend, startBtwSession } from '
 import { AttachedFilesList, AttachedVSCodeFileChips, ActiveEditorFileSuggestion } from './FileAttachment';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { ToolPopupContent } from './message/types';
-import { QueuedMessageChips } from './QueuedMessageChips';
-import { AutoReviewBanner } from './AutoReviewBanner';
+import { QueuedMessagesStrip } from './QueuedMessagesStrip';
+import { AutoReviewStrip } from './AutoReviewStrip';
 import type { FileMentionHandle } from './FileMentionAutocomplete';
 import type { CommandAutocompleteHandle, CommandInfo } from './CommandAutocomplete';
 import type { SkillAutocompleteHandle } from './SkillAutocomplete';
@@ -217,12 +217,12 @@ import { ComposerFooter } from './composer/ui/ComposerFooter';
 import { MobilePillComposer } from './composer/ui/MobilePillComposer';
 import { ComposerContextChips } from './composer/ui/ComposerContextChips';
 import { LinkedReferenceRow } from './composer/ui/LinkedReferenceRow';
-import { RevertedMessageDock } from './composer/ui/RevertedMessageDock';
+import { RevertedMessagesStrip } from './RevertedMessagesStrip';
 import { SessionSuggestionChip } from '@/components/chat/SessionSuggestionChip';
 import { SessionDoneHintRow } from '@/components/chat/SessionDoneHintRow';
 import { SessionReviewHintRow } from '@/components/chat/SessionReviewHintRow';
 import { BackgroundShellsStrip } from '@/components/chat/BackgroundShellsStrip';
-import { WorktreeSetupStrip } from '@/components/chat/WorktreeSetupStrip';
+import { ComposerStatusStrip } from '@/components/chat/ComposerStatusStrip';
 import { useWorktreeBootstrapPending } from '@/hooks/useWorktreeBootstrapPending';
 import { FormDock } from '@/components/chat/FormDock';
 import { PermissionDock } from '@/components/chat/PermissionDock';
@@ -3571,8 +3571,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     // was opened for, whatever the draft picks after.
     const isolatedSpacesEnabled = useUIStore((state) => state.isolatedSpacesEnabled);
     const [newSpaceProject, setNewSpaceProject] = React.useState<{ id: string; path: string } | null>(null);
-    // A message sent while the space is still being made waits for it; the composer is empty
-    // then, so this line is the only sign that the message was not lost.
     const draftRequestId = newSessionDraft?.pendingWorktreeRequestId ?? null;
     const messageWaitsForSpace = React.useSyncExternalStore(
         subscribeDraftSendWaiting,
@@ -3823,13 +3821,46 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     // ends, a first prompt can wait with nothing else saying why.
     const worktreeSetupDirectory = currentSessionDirectoryForSync ?? currentDirectory ?? null;
     const worktreeSetupPending = useWorktreeBootstrapPending(isBtwActive ? null : worktreeSetupDirectory);
-    const worktreeSetupRow = worktreeSetupPending ? <WorktreeSetupStrip /> : null;
+    const worktreeSetupRow = worktreeSetupPending
+        ? <ComposerStatusStrip icon="loader-4" spin text={t('chat.worktreeSetup.running')} />
+        : null;
+    // A message sent while its space is still being made waits for it; the
+    // composer is empty then, so this row is the only sign it was not lost.
+    const spaceWaitRow = showDraftTargetSelectors && messageWaitsForSpace
+        ? <ComposerStatusStrip icon="time" text={t('spaces.draft.queued')} />
+        : null;
+    const autoReviewRow = !isBtwActive && !newSessionDraftOpen ? <AutoReviewStrip /> : null;
+    // The session's goal, then what is still running, then what waits for it.
+    const goalRow = !isBtwActive ? (
+        <SessionGoalRow
+            sessionId={currentSessionId}
+            directory={currentSessionDirectoryForSync ?? currentDirectory}
+        />
+    ) : null;
+    const revertRow = !isBtwActive && !newSessionDraftOpen ? (
+        <RevertedMessagesStrip
+            sessionId={currentSessionId}
+            directory={currentSessionDirectoryForSync ?? currentDirectory}
+        />
+    ) : null;
+    const queueRow = !isBtwActive && !newSessionDraftOpen ? (
+        <QueuedMessagesStrip
+            target={parentMessageQueueTarget}
+            onEditMessage={handleQueuedMessageEdit}
+            onSendMessage={handleQueuedMessageSend}
+        />
+    ) : null;
     // Null exactly when the suggestion row alone would have been: the mobile
     // pill picks its shape from whether a top row exists.
-    const composerTopRows = worktreeSetupRow || backgroundShellsRow || doneHintRow || reviewHintRow || suggestionRow ? (
+    const composerTopRows = worktreeSetupRow || spaceWaitRow || goalRow || autoReviewRow || backgroundShellsRow || revertRow || queueRow || doneHintRow || reviewHintRow || suggestionRow ? (
         <>
             {worktreeSetupRow}
+            {spaceWaitRow}
+            {goalRow}
+            {autoReviewRow}
             {backgroundShellsRow}
+            {revertRow}
+            {queueRow}
             {doneHintRow}
             {reviewHintRow}
             {suggestionRow}
@@ -3999,12 +4030,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     furniture (chips, banners, draft selectors) stays in state
                     and returns unchanged when the comment exits. */}
                 {!mobileCommentActive ? (<>
-                <AutoReviewBanner />
-
-                <RevertedMessageDock
-                    sessionId={currentSessionId}
-                    directory={currentSessionDirectoryForSync ?? currentDirectory}
-                />
                 {!isMobile && (showDraftTargetSelectors || draftPresentationExiting) && selectedDraftProject ? (
                     <div className={draftPresentationClassName}>
                         <DraftTargetSelectors
@@ -4025,12 +4050,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             theme={currentTheme}
                         />
                     </div>
-                ) : null}
-                {showDraftTargetSelectors && messageWaitsForSpace ? (
-                    <p className="mb-1.5 flex items-center gap-1.5 px-0.5 typography-meta text-muted-foreground" role="status">
-                        <Icon name="time" className="size-3.5 shrink-0" />
-                        {t('spaces.draft.queued')}
-                    </p>
                 ) : null}
                 {isMobile && showDraftTargetSelectors && selectedDraftProject ? (
                     <MobileDraftTargetTriggers
@@ -4068,7 +4087,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     <MobilePillComposer
                         message={message}
                         sessionId={currentSessionId}
-                        directory={currentSessionDirectoryForSync ?? currentDirectory}
                         newSessionDraftOpen={newSessionDraftOpen}
                         hasContent={Boolean(hasContent)}
                         isVSCode={isVSCode}
@@ -4100,11 +4118,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     />
                 ) : (
                 <>
-                {!isBtwActive ? <SessionGoalRow
-                    sessionId={currentSessionId}
-                    directory={currentSessionDirectoryForSync ?? currentDirectory}
-                    className="mb-1.5"
-                /> : null}
                 {/* The autocomplete popups anchor to this wrapper, not to the
                     glass box: a backdrop-filter ancestor is a backdrop root,
                     so a glass popup inside the box would only blur the box's
@@ -4380,8 +4393,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                     className={cn('chat-input-column mt-4', draftPresentationClassName)}
                 />
             ) : null}
-            {/* The agent's requests outrank the queue: BTW, then a permission,
-                then the form, then the queue, then the suggestion. */}
+            {/* One floating panel at a time: BTW, then a permission, then the form. */}
             <PermissionDock
                 sessionId={currentSessionId}
                 directory={currentSessionDirectoryForSync ?? currentDirectory ?? undefined}
@@ -4391,13 +4403,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 sessionId={currentSessionId}
                 directory={currentSessionDirectoryForSync ?? currentDirectory ?? undefined}
                 hidden={newSessionDraftOpen || isBtwActive || isBtwPanelVisible || hasPendingPermission}
-            />
-            <QueuedMessageChips
-                key={parentMessageQueueKey}
-                target={parentMessageQueueTarget}
-                hidden={newSessionDraftOpen || isBtwActive || isBtwPanelVisible || hasPendingForm || mobileCommentActive}
-                onEditMessage={handleQueuedMessageEdit}
-                onSendMessage={handleQueuedMessageSend}
             />
             {currentSessionId ? <BtwPanel parentSessionId={currentSessionId} panel={btwPanel} onExit={handleExitBtw} /> : null}
         </form>

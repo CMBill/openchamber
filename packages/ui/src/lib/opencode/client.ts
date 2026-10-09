@@ -1324,7 +1324,11 @@ class OpencodeService {
     return id
   }
 
-  /** Stages a revert to before `messageId`; nothing changes until {@link commitRevert}. */
+  /**
+   * Stages a revert to before `messageId`: the later messages hide and their
+   * file changes roll back. The next prompt commits it on the server;
+   * {@link clearRevert} puts everything back.
+   */
   async stageRevert(sessionId: string, messageId: string, options?: { files?: boolean; directory?: string | null }): Promise<SessionRevert> {
     return call("session.revert.stage", () =>
       this.clientFor(options?.directory).session.revert.stage({
@@ -1333,10 +1337,6 @@ class OpencodeService {
         files: options?.files,
       }),
     )
-  }
-
-  async commitRevert(sessionId: string, directory?: string | null): Promise<void> {
-    await call("session.revert.commit", () => this.clientFor(directory).session.revert.commit({ sessionID: sessionId }))
   }
 
   async clearRevert(sessionId: string, directory?: string | null): Promise<void> {

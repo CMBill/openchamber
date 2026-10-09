@@ -540,27 +540,6 @@ async function cascadeRevertToDescendants(rootId: string, cutoff: number): Promi
   }
 }
 
-/**
- * Finalizes a staged revert: the hidden messages are deleted for good, in the
- * session and in every descendant that was staged alongside it.
- */
-export async function commitStagedRevert(sessionId: string): Promise<void> {
-  const { directory } = dirStoreForSession(sessionId)
-  for (const descendant of getDescendantSessions(sessionId)) {
-    if (!descendant.session.revert) continue
-    try {
-      await opencodeClient.commitRevert(descendant.session.id, descendant.directory)
-      mirrorSessionIntoLiveStores(await opencodeClient.getSession(descendant.session.id, descendant.directory), descendant.directory)
-    } catch (error) {
-      console.error(`[session-actions] Failed to commit revert in descendant ${descendant.session.id}:`, error)
-    }
-  }
-  await opencodeClient.commitRevert(sessionId, directory)
-  mirrorSessionIntoLiveStores(await opencodeClient.getSession(sessionId, directory), directory)
-  await refetchSessionMessages(sessionId)
-  if (directory) sessionEvents.requestGitRefresh({ directory })
-}
-
 /** Cancels a staged revert: the hidden messages come back, in descendants too. */
 export async function clearStagedRevert(sessionId: string): Promise<void> {
   const { directory } = dirStoreForSession(sessionId)

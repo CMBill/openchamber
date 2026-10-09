@@ -33,7 +33,6 @@ const renderPill = async (options: { hasContent: boolean; newSessionDraftOpen: b
         <ThemeSystemProvider>
         <I18nProvider>
             <MobilePillComposer
-                directory="/fixture"
                 message={options.hasContent ? 'Draft message' : ''}
                 sessionId={options.newSessionDraftOpen ? null : 'session-1'}
                 newSessionDraftOpen={options.newSessionDraftOpen}

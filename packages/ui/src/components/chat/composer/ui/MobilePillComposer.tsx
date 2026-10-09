@@ -17,7 +17,6 @@ import type { SourceControlProvider } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
 import { StopIcon } from '@/components/icons/StopIcon';
-import { SessionGoalRow } from '@/components/chat/SessionGoalRow';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -28,7 +27,6 @@ import { ComposerAttachmentControls } from './ComposerAttachmentControls';
 export interface MobilePillComposerProps {
     message: string;
     sessionId: string | null;
-    directory?: string;
     newSessionDraftOpen: boolean;
     hasContent: boolean;
     isVSCode: boolean;
@@ -37,7 +35,7 @@ export interface MobilePillComposerProps {
     iconSizeClass: string;
     sendIconSizeClass: string;
     stopIconSizeClass: string;
-    /** Rendered as the pill's own first row (the suggested follow-up). */
+    /** The composer's top rows (goal, queue, hints, suggested follow-up), inside the pill. */
     topRow?: React.ReactNode;
     /** Attached files, shown inside the pill above the draft line. */
     attachments?: React.ReactNode;
@@ -63,7 +61,6 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
     const {
         message,
         sessionId: currentSessionId,
-        directory,
         newSessionDraftOpen,
         hasContent,
         isVSCode,
@@ -95,11 +92,6 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
 
     return (
         <div className="flex flex-col">
-        <SessionGoalRow
-            sessionId={currentSessionId}
-            directory={directory}
-            className="mb-1.5"
-        />
             {/* Shadow on the wrapper, never on the glass: see "Floating
                 composer" in composer/DOCUMENTATION.md. The wrapper hugs the
                 box, so the shadow follows the morph's height tween. */}
