@@ -2,6 +2,7 @@ import { isCompleteIdentity } from '@/lib/api/git-identity';
 import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { useIsContributorWorktree } from '@/hooks/useIsContributorWorktree';
+import { WhitespaceToggleIcon } from '@/components/views/WhitespaceToggleIcon';
 
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -1308,7 +1309,7 @@ const MobileDiffDetail: React.FC<{
   const language = React.useMemo(() => getLanguageFromExtension(path) || 'text', [path]);
   const hideWhitespace = useUIStore((state) => state.diffHideWhitespace);
   const setHideWhitespace = useUIStore((state) => state.setDiffHideWhitespace);
-  const whitespaceLabel = hideWhitespace ? t('diffView.actions.showWhitespace') : t('diffView.actions.hideWhitespace');
+  const whitespaceState = hideWhitespace ? t('diffView.whitespace.hidden') : t('diffView.whitespace.shown');
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
@@ -1331,12 +1332,12 @@ const MobileDiffDetail: React.FC<{
             'flex size-9 shrink-0 items-center justify-center rounded-lg hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             hideWhitespace ? 'text-foreground' : 'text-muted-foreground',
           )}
-          aria-label={whitespaceLabel}
+          aria-label={t('diffView.actions.hideWhitespace')}
           aria-pressed={hideWhitespace}
-          title={whitespaceLabel}
+          title={whitespaceState}
           onClick={() => setHideWhitespace(!hideWhitespace)}
         >
-          <Icon name="space" className="size-5" />
+          <WhitespaceToggleIcon hidden={hideWhitespace} className="size-5" />
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-hidden">
