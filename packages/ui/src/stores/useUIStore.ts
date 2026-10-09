@@ -81,6 +81,10 @@ type ContextPanelTab = {
       click replaces it; opening the file any other way, editing it, or
       double-clicking keeps it. */
   preview: boolean;
+  /** The session whose agent opened this browser tab; null for a tab the
+      user opened. Agent actions that name no tab use their own session's tab
+      and leave another session's alone. */
+  ownerSessionId: string | null;
   touchedAt: number;
 };
 
@@ -97,6 +101,7 @@ type ContextPanelTabDescriptor = {
   stagedDiff?: boolean;
   diffScope?: PendingDiffScope | null;
   preview?: boolean;
+  ownerSessionId?: string | null;
 };
 
 type ContextPanelDirectoryState = {
@@ -302,6 +307,10 @@ const buildContextPanelTabID = (mode: ContextPanelMode, dedupeKey: string): stri
   return dedupeKey === mode ? mode : `${mode}:${dedupeKey}`;
 };
 
+const normalizeBrowserTabOwner = (mode: ContextPanelMode, value: string | null | undefined): string | null => (
+  mode === 'browser' && value?.trim() ? value.trim() : null
+);
+
 const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPanelTab => {
   const normalizedTargetPath = normalizeContextTargetPath(descriptor.targetPath);
   const normalizedTargetDirectory = contextPanelModeKeepsTargetDirectory(descriptor.mode)
@@ -328,6 +337,7 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
     stagedDiff: descriptor.stagedDiff === true,
     diffScope: normalizePendingDiffScope(descriptor.diffScope) ?? (descriptor.stagedDiff === true ? 'staged' : 'working'),
     preview: descriptor.mode === 'file' && descriptor.preview === true,
+    ownerSessionId: normalizeBrowserTabOwner(descriptor.mode, descriptor.ownerSessionId),
     touchedAt: Date.now(),
   };
 };
@@ -391,6 +401,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       stagedDiff?: unknown;
       diffScope?: unknown;
       preview?: unknown;
+      ownerSessionId?: unknown;
       touchedAt?: unknown;
     };
 
@@ -449,6 +460,10 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       stagedDiff: candidate.stagedDiff === true,
       diffScope: normalizePendingDiffScope(candidate.diffScope) ?? (candidate.stagedDiff === true ? 'staged' : 'working'),
       preview: candidate.mode === 'file' && candidate.preview === true,
+      ownerSessionId: normalizeBrowserTabOwner(
+        candidate.mode,
+        typeof candidate.ownerSessionId === 'string' ? candidate.ownerSessionId : null,
+      ),
       touchedAt: typeof candidate.touchedAt === 'number' && Number.isFinite(candidate.touchedAt)
         ? candidate.touchedAt
         : Date.now(),
@@ -1078,7 +1093,7 @@ interface UIStore {
   openContextBrowser: (directory: string, url?: string, options?: { reveal?: boolean }) => void;
   openNewContextBrowserTab: (directory: string) => void;
   /** A new background browser tab for an agent at `url`; returns its tab id, or null where there is no browser. */
-  openAgentBrowserTab: (directory: string, url: string) => string | null;
+  openAgentBrowserTab: (directory: string, url: string, ownerSessionId: string | null) => string | null;
   setContextPanelTabTargetPath: (directory: string, tabID: string, targetPath: string) => void;
   setActiveContextPanelTab: (directory: string, tabID: string) => void;
   reorderContextPanelTabs: (directory: string, activeTabID: string, overTabID: string) => void;
@@ -1715,7 +1730,7 @@ export const useUIStore = create<UIStore>()(
         // An agent's page gets its own tab in the background: never the tab
         // the user is on, never an existing tab that happens to show the same
         // address, and the panel stays as the user left it.
-        openAgentBrowserTab: (directory, url) => {
+        openAgentBrowserTab: (directory, url, ownerSessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory || isVSCodeRuntime()) return null;
           browserTabSequence += 1;
@@ -1726,6 +1741,7 @@ export const useUIStore = create<UIStore>()(
             targetPath: url.trim(),
             dedupeKey,
             label: null,
+            ownerSessionId,
           }, { reveal: false });
           return buildContextPanelTabID('browser', dedupeKey);
         },
