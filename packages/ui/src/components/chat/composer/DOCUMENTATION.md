@@ -190,7 +190,21 @@ glass child only blurs its parent's content. Popups therefore anchor to the
 wrapper outside the box, and the dictation overlay (`.oc-dictation-overlay`)
 never stacks glass on glass: a CSS rule in `design-system.css` hides the
 composer's own contents while it is up, leaving the box as the single glass
-surface on desktop and the overlay itself on mobile.
+surface on desktop and the overlay itself on mobile. On desktop the footer's
+dictation reports its state and the box carries `data-dictating`; the
+elements between the box and the overlay carry `data-dictation-chain`, so the
+rule only targets their other children. A `:has()` over the box was
+re-evaluated for every descendant on each editor mutation.
+
+Typing re-renders `ChatInput` and its editor, nothing else. The children that
+do not depend on the draft text (footer, autocomplete popups, docks, BTW
+panel, draft target selectors and preset chips) are memoized, and the props
+`ChatInput` passes them keep their identity while the user types: callbacks
+read the text through `messageRef` or `useStableHandler`, derived objects are
+memoized, and `useBtwPanelState` and `useMobileComposerShell` return stable
+objects. `useBtwPanelState` reads the parent and fork sessions as primitives,
+so a streaming turn's `session.updated` events do not re-render the composer.
+`__tests__/ChatInput.keystroke.test.tsx` counts the renders per keystroke.
 
 A glass surface never carries its own shadow: the shadow sits on a wrapper
 (or the glass moves to an inner layer). Chromium grows a backdrop-filter

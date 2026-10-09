@@ -36,7 +36,7 @@ import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import { createSessionOwnershipIndex } from '../sessions/sessionOwnership';
 import { useProjectSessionLists } from '../projects/useProjectSessionLists';
 import { useSessionSidebarSections } from '../projects/useSessionSidebarSections';
-import { SessionPrefetchEffect } from './useSessionPrefetch';
+import { SessionPrefetchProvider } from './useSessionPrefetch';
 import { normalizePath } from '../utils';
 import type { SessionGroup, SessionNode } from '../types';
 import { SessionProjectScroller } from '../projects/SessionProjectScroller';
@@ -1003,11 +1003,11 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       sessionOwnerBySessionId={ownership.bySessionId}
       handleSessionSelect={selectSessionForProject}
     />
-    <SessionPrefetchEffect
+    <SessionPrefetchProvider
       sortedSessions={collection.orderedSessions}
       recentSessions={recentSessions}
       prefetchSession={prefetchSession}
-    />
+    >
     <SessionRowOrderProvider
       entries={sidebarRowModel.selectionEntries}
       descendantIds={sidebarRowModel.selectionDescendantIds}
@@ -1028,6 +1028,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
         <SessionProjectScroller model={scrollerModel} view={scrollerView} actions={scrollerActionSet} />
       </div>
     </SessionRowOrderProvider>
+    </SessionPrefetchProvider>
   </>;
 };
 
