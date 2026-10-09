@@ -3145,8 +3145,10 @@ async function readStatus(normalizedDirectory, lightMode) {
     if (!lightMode && !tracking && status.current) {
       const baseRef = await selectBaseRefForUnpublished();
       if (baseRef) {
+        // Commits already on a remote are published even without an upstream:
+        // a contributor's PR head arrives as a fork remote-tracking branch.
         const countRaw = await git
-          .raw(['rev-list', '--count', `${baseRef}..HEAD`])
+          .raw(['rev-list', '--count', 'HEAD', '--not', baseRef, '--remotes'])
           .then((value) => String(value || '').trim())
           .catch(() => '');
         const count = parseInt(countRaw, 10);

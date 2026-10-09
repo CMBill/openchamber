@@ -408,7 +408,7 @@ The following functions are internal helpers used by exported functions:
 - `tracking`: Upstream branch (e.g., 'origin/main').
 - `ahead`: Number of commits ahead of upstream. Without an upstream, a full read counts the commits missing from the base branch instead (`origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`).
 - `behind`: Number of commits behind upstream.
-- `aheadBase`: The base ref `ahead` was counted against when there is no upstream; `null` when no such count was made (an upstream exists, light mode, detached HEAD, or no base ref found), so `ahead: 0` alone never means nothing is unpublished.
+- `aheadBase`: The base ref `ahead` was counted against when there is no upstream; commits already on any remote-tracking branch are not counted either, so a contributor's PR checkout, whose head arrives as a fork remote branch, starts at `ahead: 0`. `null` when no such count was made (an upstream exists, light mode, detached HEAD, or no base ref found), so `ahead: 0` alone never means nothing is unpublished.
 - `upstreamComparison`: Optional comparison against `upstream/<current-branch>`, with `{ remote, branch, ahead, behind }`.
 - `files`: Array of file objects with `path`, `index`, `working_dir` status codes.
 - `isClean`: Boolean indicating if working tree is clean.

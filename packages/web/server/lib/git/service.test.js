@@ -963,6 +963,14 @@ describe('getStatus', () => {
 
     runGit(repo, ['commit', '--allow-empty', '-m', 'Unpublished work']);
     await expect(getStatus(repo)).resolves.toMatchObject({ tracking: null, ahead: 1, aheadBase: 'origin/main' });
+
+    // A contributor's PR head fetched as a fork remote-tracking branch is
+    // already published, though the branch tracks nothing.
+    runGit(repo, ['update-ref', 'refs/remotes/pr-fork/feature', 'HEAD']);
+    await expect(getStatus(repo)).resolves.toMatchObject({ tracking: null, ahead: 0, aheadBase: 'origin/main' });
+
+    runGit(repo, ['commit', '--allow-empty', '-m', 'Work after checkout']);
+    await expect(getStatus(repo)).resolves.toMatchObject({ tracking: null, ahead: 1, aheadBase: 'origin/main' });
   });
 
   it('falls back to a local main as the base, but never to the branch itself', async () => {
