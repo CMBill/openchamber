@@ -187,7 +187,7 @@ A glass surface never carries its own shadow: the shadow sits on a wrapper
 (or the glass moves to an inner layer). Chromium grows a backdrop-filter
 layer by the shadow's blur, and that band painted a flat grey strip over
 whatever was stacked above: the goal row, the status pill, the queue panel.
-This holds for the box, the mobile pill and its queue button, the floating
+This holds for the box, the mobile pill, the floating
 panels, the context-chip preview and the mobile dictation overlay.
 
 Context chips (review comments, quotes, annotations, terminal selections, PR

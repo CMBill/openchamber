@@ -8,8 +8,8 @@
  * effect.
  *
  * With content, the inner end slot sends while the session is idle. While it
- * is running, abort keeps that slot and a round queue action appears beside
- * the pill; otherwise nothing sits beside it.
+ * is running, abort keeps that slot and a queue action appears just before it,
+ * inside the pill.
  */
 
 import React, { useState } from 'react';
@@ -88,7 +88,7 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
         onAbort,
     } = props;
     const canPrimaryAction = hasContent && Boolean(currentSessionId || newSessionDraftOpen);
-    const showTrailingSendAction = canPrimaryAction && canAbort;
+    const showQueueAction = canPrimaryAction && canAbort;
     const dictationEnabled = useConfigStore((state) => state.dictationEnabled);
     const [dictationSupported] = useState(() => !isVSCodeRuntime() && isDictationCaptureSupported());
     const showDictation = dictationEnabled && dictationSupported;
@@ -100,13 +100,12 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
             directory={directory}
             className="mb-1.5"
         />
-        <div className="flex items-center">
             {/* Shadow on the wrapper, never on the glass: see "Floating
                 composer" in composer/DOCUMENTATION.md. The wrapper hugs the
                 box, so the shadow follows the morph's height tween. */}
             <div
                 className={cn(
-                    'flex min-w-0 flex-1 flex-col shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
+                    'flex min-w-0 flex-col shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
                     topRow || bottomRow ? 'rounded-[1.5rem]' : 'rounded-full',
                 )}
             >
@@ -170,6 +169,19 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
                         <Icon name="mic" className={cn(iconSizeClass, 'text-current')} />
                     </button>
                 ) : null}
+                {/* While a turn runs, a draft can only be queued: the same
+                    rotated icon and label the expanded composer uses. */}
+                {showQueueAction ? (
+                    <button
+                        type="button"
+                        className={cn(footerIconButtonClass, 'text-primary hover:text-primary')}
+                        onClick={onQueueMessage}
+                        title={t('chat.chatInput.actions.queueMessageAria')}
+                        aria-label={t('chat.chatInput.actions.queueMessageAria')}
+                    >
+                        <Icon name="send-plane-2" className={cn(sendIconSizeClass, '-rotate-90')} />
+                    </button>
+                ) : null}
                 {/* Same visibility rule as the full composer's stop control:
                     while a turn is running the stop button takes the mic's
                     end slot and the mic shifts one slot left. Instant swap —
@@ -213,32 +225,6 @@ export function MobilePillComposer(props: MobilePillComposerProps) {
             {bottomRow}
             </div>
             </div>
-            {/* While running, Abort owns the pill's end slot and this outer
-                button queues the draft, with the same rotated icon and label
-                the expanded composer uses for that state. Collapsed otherwise. */}
-            <div
-                className={cn(
-                    'flex-shrink-0 transition-all duration-200 ease-out',
-                    // The gap lives on the slot, so a collapsed slot leaves
-                    // the pill exactly as wide as the expanded box.
-                    showTrailingSendAction ? 'ml-2 w-11 opacity-100' : 'w-0 opacity-0 overflow-hidden',
-                    // The glass button's shadow, kept off its backdrop-filter.
-                    'rounded-full shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.12)]',
-                )}
-            >
-                <button
-                    type="button"
-                    className="oc-glass-composer flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border border-border/80 text-primary hover:text-primary"
-                    onClick={onQueueMessage}
-                    disabled={!showTrailingSendAction}
-                    tabIndex={showTrailingSendAction ? undefined : -1}
-                    title={t('chat.chatInput.actions.queueMessageAria')}
-                    aria-label={t('chat.chatInput.actions.queueMessageAria')}
-                >
-                    <Icon name="send-plane-2" className={cn(sendIconSizeClass, '-rotate-90', 'text-current')} />
-                </button>
-            </div>
-        </div>
         </div>
     );
 }
