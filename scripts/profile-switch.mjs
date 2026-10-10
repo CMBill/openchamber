@@ -40,6 +40,7 @@ import { summarizeCpuProfile } from "./perf/cpu-profile.mjs"
 import { expandProjects, expandSessionLists } from "./perf/scenario.mjs"
 import { percentile, round } from "./perf/metrics.mjs"
 import { createNetworkRecorder, endpointPattern, summarizeRequests } from "./perf/network.mjs"
+import { buildRenderProbeSource, printRenderProbe, readRenderProbe, RENDER_PROBE_GLOBAL, summarizeRenderProbe } from "./perf/render-probe.mjs"
 
 const HELP = `Usage: bun run profile:switch -- [options]
 
@@ -86,6 +87,17 @@ Options:
                            (for example, a script that moves content after the
                            reveal, to prove the shift metric reads it); the
                            summary is labelled as a modified app.
+  --render-probe           Count renders per component, renders that changed
+                           nothing in the DOM, store notifications and DOM
+                           mutations per region over the switches after the
+                           last page load (every switch without --cold-reload;
+                           the last cycle with it), per
+                           scripts/perf/render-probe.mjs. Writes
+                           render-probe.json. An attribution run: the probe
+                           adds work to every commit, so quote counts, not ms.
+  --render-probe-hook <Component:index>
+                           With --render-probe, record the call stacks that
+                           dispatch to this component's hook
   --chrome <path>          Chrome/Chromium executable
   --profile-dir <path>     Chrome profile (default: ~/.cache/openchamber-perf-switch-profile).
                            Its storage persists the sidebar and last session per
@@ -117,6 +129,8 @@ const parseArgs = (argv) => {
     budgetShift: null,
     label: null,
     injectScript: null,
+    renderProbe: false,
+    renderProbeHook: null,
     chrome: null,
     profileDir: join(homedir(), ".cache", "openchamber-perf-switch-profile"),
     headless: false,
@@ -143,6 +157,8 @@ const parseArgs = (argv) => {
     else if (value === "--budget-shift") options.budgetShift = Number(argv[++index])
     else if (value === "--label") options.label = argv[++index]
     else if (value === "--inject-script") options.injectScript = argv[++index]
+    else if (value === "--render-probe") options.renderProbe = true
+    else if (value === "--render-probe-hook") options.renderProbeHook = argv[++index]
     else if (value === "--chrome") options.chrome = argv[++index]
     else if (value === "--profile-dir") options.profileDir = resolve(argv[++index])
     else if (value === "--headless") options.headless = true
@@ -450,6 +466,10 @@ const main = async () => {
       await client.send("Page.addScriptToEvaluateOnNewDocument", { source: await readFile(resolve(options.injectScript), "utf8") })
       console.log(`MODIFIED APP — injected script: ${options.injectScript}`)
     }
+    if (options.renderProbe) {
+      await client.send("Page.addScriptToEvaluateOnNewDocument", { source: buildRenderProbeSource({ traceHook: options.renderProbeHook }) })
+      console.log("ATTRIBUTION RUN — render probe on; switch timings from this run are inflated.")
+    }
     const network = createNetworkRecorder(client)
 
     // Opens the app parked on `parkId`, so the session it restores is not one
@@ -503,8 +523,17 @@ const main = async () => {
 
     const switches = []
     let index = 0
+    // A reload starts a fresh page and probe, so the probe covers the switches
+    // after the last load; without --cold-reload that is every switch.
+    const startRenderProbe = () => (options.renderProbe ? evaluateValue(client, `globalThis[${JSON.stringify(RENDER_PROBE_GLOBAL)}]?.start()`) : null)
+    await startRenderProbe()
+    let probedSwitches = 0
     for (let cycle = 0; cycle < options.repeat; cycle += 1) {
-      if (cycle > 0 && options.coldReload) await loadPage(park)
+      if (cycle > 0 && options.coldReload) {
+        await loadPage(park)
+        await startRenderProbe()
+        probedSwitches = 0
+      }
       if (cycle === 0 || options.coldReload) {
         const present = (await readSidebarRows(client)).map((row) => row.id)
         const gone = plan.filter((id) => !present.includes(id))
@@ -552,12 +581,15 @@ const main = async () => {
         const networkSummary = summarizeRequests(triggered, options.url)
         const entry = { index, cycle, id, visit, ...probe, requestCount: triggered.length, requests, network: networkSummary, renders, longestTask: null }
         switches.push(entry)
+        probedSwitches += 1
         const renderSummary = Object.entries(renders).map(([metric, count]) => `${metric.replace(/\.render$/, "")}=${count}`).join(" ")
         console.log(`#${String(index).padStart(2)} ${visit.padEnd(4)} ${id.slice(0, 16)} ack=${fmt(probe.ack)} content=${fmt(probe.content)} visible=${fmt(probe.visible)} shift=${probe.shift ? `${probe.shift.maxPx}px` : "-"} (${probe.messageCount ?? "-"} msgs) longestFrameGap=${fmt(probe.longestFrameGap)} requests=${triggered.length} ${networkSummary.decodedKb}KB ${renderSummary}`)
         index += 1
       }
     }
 
+    if (options.renderProbe) await evaluateValue(client, `globalThis[${JSON.stringify(RENDER_PROBE_GLOBAL)}]?.stop()`)
+    const renderProbeRaw = options.renderProbe ? await readRenderProbe((expression) => evaluateValue(client, expression)) : null
     const tracingComplete = client.once("Tracing.tracingComplete", 120_000)
     await client.send("Tracing.end")
     await tracingComplete
@@ -592,6 +624,7 @@ const main = async () => {
       recordedAt: new Date().toISOString(),
       label: options.label,
       injectedScript: options.injectScript,
+      renderProbe: renderProbeRaw ? { ...summarizeRenderProbe(JSON.parse(renderProbeRaw)), switches: probedSwitches } : null,
       url: options.url,
       sessions: plan,
       park,
@@ -606,6 +639,7 @@ const main = async () => {
     await writeFile(join(output, "switch-summary.json"), JSON.stringify(summary, null, 2))
     await writeFile(join(output, "trace.json"), JSON.stringify({ traceEvents }))
     await writeFile(join(output, "cpu-profile.cpuprofile"), JSON.stringify(profile))
+    if (renderProbeRaw) await writeFile(join(output, "render-probe.json"), renderProbeRaw)
 
     console.log("")
     const line = (label, value, unit = "ms") => (value ? `${label} ${value.median}${unit} (p95 ${value.p95})` : `${label} -`)
@@ -624,6 +658,7 @@ const main = async () => {
       console.log(`  ${id.slice(0, 20)} ${String(session.messageCount).padStart(4)} msgs  cold: ${describe(session.cold)}  warm: ${describe(session.warm)}`)
     }
     if (summary.invalidSwitches > 0) console.warn(`Warning: ${summary.invalidSwitches} switch(es) never acknowledged or never showed content; they are excluded from the statistics.`)
+    if (summary.renderProbe) printRenderProbe(summary.renderProbe, { perUnit: { label: "switch", count: probedSwitches } })
     if (baseline) printComparison(summary, baseline)
     console.log(`Artifacts written to ${output}`)
 

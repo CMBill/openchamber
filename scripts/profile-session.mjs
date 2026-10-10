@@ -33,6 +33,7 @@ import { buildIdleProbeSource, IDLE_PROBE_GLOBAL } from "./perf/idle-probe.mjs"
 import { summarizeCpuProfile } from "./perf/cpu-profile.mjs"
 import { growthPerSecond, longestTaskInWindow, metricMap, round, summarizeFrameBudget, summarizeLongTasks, summarizeThreads, summarizeTraceEvents } from "./perf/metrics.mjs"
 import { createProcessCpuSampler, openBrowserClient, resolveServerProcesses } from "./perf/process-cpu.mjs"
+import { buildRenderProbeSource, printRenderProbe, readRenderProbe, RENDER_PROBE_GLOBAL, summarizeRenderProbe } from "./perf/render-probe.mjs"
 import { expandProjects, expandSessionLists } from "./perf/scenario.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -51,6 +52,10 @@ Options:
   --port <port>            OpenChamber CLI port (default: from --url)
   --dir <path>             Session directory (default: repository root)
   --session <id>           Reuse this session instead of creating one
+  --quiet <seconds>        Send no prompt: record this long with the session
+                           open and every instrument on. The floor a streaming
+                           figure stands on (subtract it to get what the stream
+                           itself costs); pair it with --session.
   --expand-projects        Expand every project in the sidebar before recording
   --expand-sessions        Click every "Show more sessions" control before
                            recording, so all session rows are mounted
@@ -84,6 +89,20 @@ Options:
                            comparing long-task or busy figures between runs.
   --save-trace             Also write the raw timeline to trace.json, which the
                            DevTools Performance panel and Perfetto both open.
+  --extra-categories <list> Comma-separated trace categories to add, such as
+                           disabled-by-default-devtools.timeline.invalidationTracking
+                           (names what invalidated each style recalc)
+  --render-probe           Count renders per component, renders that changed
+                           nothing in the DOM, store notifications and DOM
+                           mutations per region (scripts/perf/render-probe.mjs).
+                           Writes render-probe.json. Adds work on every
+                           commit: an attribution run, never a timing.
+  --render-probe-hook <Component:index>
+                           With --render-probe, record the call stacks that
+                           dispatch to this component's hook
+  --heap-sampling          Record a sampling heap profile (heap.heapprofile,
+                           opens in the DevTools Memory panel) and list the
+                           top allocation sites. Adds overhead: attribution only.
   --process-cpu-only       Record per-process CPU with every in-page instrument
                            off: no sampler, trace, probe or stream counters.
                            The sampler and the trace run inside the renderer
@@ -131,6 +150,11 @@ const parseArgs = (argv) => {
     saveTrace: false,
     injectCss: null,
     injectScript: null,
+    quiet: 0,
+    extraCategories: [],
+    renderProbe: false,
+    renderProbeHook: null,
+    heapSampling: false,
     baseline: null,
     budgetLongTasks: null,
     budgetLongest: null,
@@ -167,11 +191,18 @@ const parseArgs = (argv) => {
     else if (value === "--sampling-interval") options.samplingInterval = Number(argv[++index])
     else if (value === "--inject-css") options.injectCss = argv[++index]
     else if (value === "--inject-script") options.injectScript = argv[++index]
+    else if (value === "--quiet") options.quiet = Number(argv[++index])
+    else if (value === "--extra-categories") options.extraCategories = String(argv[++index]).split(",").map((category) => category.trim()).filter(Boolean)
+    else if (value === "--render-probe") options.renderProbe = true
+    else if (value === "--render-probe-hook") options.renderProbeHook = argv[++index]
+    else if (value === "--heap-sampling") options.heapSampling = true
     else if (value === "--baseline") options.baseline = argv[++index]
     else if (value === "--budget-long-tasks") options.budgetLongTasks = Number(argv[++index])
     else if (value === "--budget-longest") options.budgetLongest = Number(argv[++index])
     else throw new Error(`Unknown option: ${value}`)
   }
+  if (!Number.isFinite(options.quiet) || options.quiet < 0) throw new Error("--quiet must be a number of seconds")
+  if (options.processCpuOnly && (options.renderProbe || options.heapSampling)) throw new Error("--process-cpu-only switches every in-page instrument off; it cannot run with --render-probe or --heap-sampling")
   const parsed = new URL(options.url)
   options.port = options.port ?? parsed.port ?? "3000"
   options.dir = resolve(options.dir)
@@ -397,10 +428,12 @@ const formatRow = (label, value, unit) => `${label.padEnd(22)} ${String(value).p
 
 const printReport = (summary, baseline) => {
   const { metrics } = summary
-  console.log(`\nStreaming profile — ${summary.metrics.streamSeconds}s response at ${summary.url}`)
+  console.log(`\nStreaming profile — ${summary.metrics.streamSeconds}s ${summary.quiet ? "quiet window" : "response"} at ${summary.url}`)
   if (summary.label) console.log(`Label: ${summary.label}`)
   if (summary.injectedCss) console.log(`MODIFIED APP — injected CSS: ${summary.injectedCss}`)
   if (summary.injectedScript) console.log(`MODIFIED APP — injected script: ${summary.injectedScript}`)
+  if (summary.renderProbe || summary.heapSampling) console.log(`ATTRIBUTION RUN — ${[summary.renderProbe && "render probe", summary.heapSampling && "heap sampling"].filter(Boolean).join(" and ")} on; its timings are inflated`)
+  if (summary.quiet) console.log(`QUIET — no prompt was sent; ${summary.metrics.streamSeconds}s with the session open`)
   if (summary.attachedPort) console.log(`ATTACHED — an already running browser on port ${summary.attachedPort} showing ${summary.pageUrl}`)
   console.log(`Session: ${summary.sessionId}${summary.model ? `  Model: ${summary.model}` : ""}`)
   console.log("")
@@ -476,6 +509,32 @@ const printReport = (summary, baseline) => {
   console.log("\nTop scheduled-work call sites while streaming:")
   for (const entry of summary.scheduledWork?.sites?.slice(0, 10) ?? []) {
     console.log(`  ${String(entry.totalMs).padStart(9)} ms  ${String(entry.calls).padStart(6)}x  ${entry.site}`)
+  }
+
+  if (summary.heapSampling) {
+    console.log("\nTop allocation sites (sampled, self size; heap.heapprofile has the tree):")
+    for (const entry of summary.heapSampling.topAllocations.slice(0, 12)) {
+      console.log(`  ${String(entry.selfMb).padStart(9)} MB  ${entry.function}`)
+    }
+  }
+  printRenderProbe(summary.renderProbe)
+}
+
+/** Self size per allocating function in a sampling heap profile. */
+const summarizeHeapProfile = (profile) => {
+  const sites = new Map()
+  const visit = (node) => {
+    const { functionName, url, lineNumber } = node.callFrame
+    const key = `${functionName || "(anonymous)"} ${url ? `${url.split("/").pop()}:${lineNumber + 1}` : ""}`.trim()
+    sites.set(key, (sites.get(key) ?? 0) + node.selfSize)
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(profile.head)
+  const totalBytes = [...sites.values()].reduce((total, bytes) => total + bytes, 0)
+  return {
+    sampledMb: round(totalBytes / 1048576),
+    topAllocations: [...sites].sort((left, right) => right[1] - left[1]).slice(0, 30)
+      .map(([name, bytes]) => ({ function: name, selfMb: round(bytes / 1048576) })),
   }
 }
 
@@ -557,6 +616,9 @@ const main = async () => {
     await client.send("Network.setBypassServiceWorker", { bypass: true })
     const instrumented = !options.processCpuOnly
     if (instrumented) await client.send("Page.addScriptToEvaluateOnNewDocument", { source: buildIdleProbeSource() })
+    // React registers with the hook while its module initialises, so the probe
+    // has to exist before any application code runs.
+    if (options.renderProbe) await client.send("Page.addScriptToEvaluateOnNewDocument", { source: buildRenderProbeSource({ traceHook: options.renderProbeHook }) })
     if (options.injectCss) {
       await client.send("Page.addScriptToEvaluateOnNewDocument", {
         source: `document.addEventListener("DOMContentLoaded", () => {
@@ -622,6 +684,10 @@ const main = async () => {
       await client.send("Profiler.setSamplingInterval", { interval: options.samplingInterval })
       await client.send("Profiler.start")
     }
+    if (options.heapSampling) {
+      await client.send("HeapProfiler.enable")
+      await client.send("HeapProfiler.startSampling", { samplingInterval: 32768, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true })
+    }
     if (instrumented) await client.send("Tracing.start", {
       transferMode: "ReportEvents",
       // `RunTask` is only emitted under the disabled-by-default timeline
@@ -634,6 +700,7 @@ const main = async () => {
         // `toplevel` wraps every task on every thread of every process; the
         // rest name what the compositor and the GPU process did inside them.
         ...(options.threadBreakdown ? ["toplevel", "cc", "viz", "gpu", "v8.gc", "disabled-by-default-v8.gc"] : []),
+        ...options.extraCategories,
       ].join(","),
     })
 
@@ -652,6 +719,7 @@ const main = async () => {
       if (status) statusFrames.push({ timestamp: params.timestamp, status })
     })
     if (instrumented) await evaluateValue(client, `performance.mark("perf:stream-start")`)
+    if (options.renderProbe) await evaluateValue(client, `globalThis[${JSON.stringify(RENDER_PROBE_GLOBAL)}]?.start()`)
     const startedAt = Date.now()
 
     const sendArgs = [
@@ -661,8 +729,11 @@ const main = async () => {
       ...(options.model ? ["--model", options.model] : []),
       ...(options.agent ? ["--agent", options.agent] : []),
     ]
-    console.log("Dispatching the prompt and recording until the session reports idle.")
-    const dispatch = runSessionCli(sendArgs, { timeoutMs: options.timeout * 1000 })
+    const quiet = options.quiet > 0
+    console.log(quiet
+      ? `Recording ${options.quiet}s with the session open; no prompt is sent.`
+      : "Dispatching the prompt and recording until the session reports idle.")
+    const dispatch = quiet ? Promise.resolve(null) : runSessionCli(sendArgs, { timeoutMs: options.timeout * 1000 })
 
     const samples = []
     let dispatchError = null
@@ -687,8 +758,12 @@ const main = async () => {
 
       // One mid-stream snapshot is enough to name a continuously running
       // animation, and avoids polling overhead inside the measured window.
-      if (animationSnapshot === null && Date.now() - startedAt > 15_000) {
+      if (animationSnapshot === null && Date.now() - startedAt > Math.min(15_000, (options.quiet * 1000) / 2 || Infinity)) {
         animationSnapshot = await snapshotAnimations(client)
+      }
+      if (quiet) {
+        if (Date.now() - startedAt >= options.quiet * 1000) { becameIdle = true; break }
+        continue
       }
 
       // `session status` is the authoritative activity source; polling it
@@ -705,10 +780,13 @@ const main = async () => {
     if (!becameIdle) console.warn(`WARNING: the session did not report idle within ${options.timeout}s; the capture is truncated.`)
 
     const streamEndedAt = Date.now()
+    if (instrumented) await evaluateValue(client, `performance.mark("perf:stream-end")`)
+    // The probe covers the stream only, like the process CPU figures.
+    if (options.renderProbe) await evaluateValue(client, `globalThis[${JSON.stringify(RENDER_PROBE_GLOBAL)}]?.stop()`)
     // Closed before the tail so the per-process figures describe the stream
     // itself and are not diluted by the quiet seconds recorded after it.
     await processCpu.sample()
-    const assistantResponse = await readAssistantResponse(cliBase, sessionId)
+    const assistantResponse = quiet ? null : await readAssistantResponse(cliBase, sessionId)
     if (options.tail > 0) await wait(options.tail * 1000)
 
     const frameLiveness = await evaluateValue(client, `new Promise((resolveFrames) => {
@@ -727,6 +805,7 @@ const main = async () => {
     const renderedAfter = await countRenderedMessages(client)
     const after = metricMap((await client.send("Performance.getMetrics")).metrics)
     const profile = instrumented ? (await client.send("Profiler.stop")).profile : null
+    const heapProfile = options.heapSampling ? (await client.send("HeapProfiler.stopSampling")).profile : null
 
     let traceComplete = instrumented
     if (instrumented) {
@@ -749,6 +828,7 @@ const main = async () => {
     const probe = await evaluateValue(client, `globalThis[${JSON.stringify(IDLE_PROBE_GLOBAL)}]?.snapshot() ?? null`)
     const streamPerformance = await evaluateValue(client, `window.__openchamberStreamPerformance?.getSnapshot() ?? null`)
     const syncCounters = await evaluateValue(client, `window.__openchamberSyncPerformance?.getSnapshot() ?? null`)
+    const renderProbeRaw = options.renderProbe ? await readRenderProbe((expression) => evaluateValue(client, expression)) : null
     const dispatchResult = await dispatch.catch(() => null)
 
     // Both signals must agree: new message elements in the DOM and the
@@ -761,14 +841,17 @@ const main = async () => {
     // uninstrumented run has no render counters and relies on the DOM signal
     // together with the assistant-response check.
     const domGrew = renderedAfter.messages > renderedBefore.messages || renderedCharacterGrowth > 0
-    const renderedStream = options.viewSession
-      ? true
-      : domGrew && (messageListRendered || !instrumented)
+    // A quiet window streams nothing, so there is no stream to have rendered.
+    const renderedStream = quiet
+      ? null
+      : options.viewSession
+        ? true
+        : domGrew && (messageListRendered || !instrumented)
 
     const tasks = summarizeLongTasks(traceEvents)
     const frameBudget = summarizeFrameBudget(traceEvents)
     const sessionIdle = locateSessionIdle(statusFrames, traceEvents)
-    const finalize = sessionIdle.inTrace
+    const finalize = !quiet && sessionIdle.inTrace
       ? longestTaskInWindow(traceEvents, sessionIdle.micros, sessionIdle.micros + 1_000_000)
       : null
     const traceBreakdown = summarizeTraceEvents(traceEvents)
@@ -791,10 +874,13 @@ const main = async () => {
       model: dispatchResult?.model ? `${dispatchResult.model.providerID}/${dispatchResult.model.modelID}` : options.model,
       agent: dispatchResult?.agent ?? options.agent,
       reachedIdle: becameIdle,
+      quiet,
       instrumented,
       directoryAlignment,
       injectedCss: options.injectCss,
       injectedScript: options.injectScript,
+      renderProbe: renderProbeRaw ? summarizeRenderProbe(JSON.parse(renderProbeRaw)) : null,
+      heapSampling: heapProfile ? summarizeHeapProfile(heapProfile) : null,
       assistantResponse,
       renderedStream,
       renderedMessagesBefore: renderedBefore.messages,
@@ -821,10 +907,10 @@ const main = async () => {
         renderedCharacters: renderedCharacterGrowth,
         busyMsPerKilochar: renderedCharacterGrowth > 0
           ? round((delta("TaskDuration") * 1000) / (renderedCharacterGrowth / 1000))
-          : 0,
+          : quiet ? null : 0,
         recalcStylePerKilochar: renderedCharacterGrowth > 0
           ? round(delta("RecalcStyleCount") / (renderedCharacterGrowth / 1000))
-          : 0,
+          : quiet ? null : 0,
         streamSeconds,
         recordedSeconds: round(elapsedSeconds),
         nodeStart: Number(before.Nodes ?? 0),
@@ -852,6 +938,8 @@ const main = async () => {
 
     await writeFile(join(output, "session-summary.json"), JSON.stringify(summary, null, 2))
     if (profile) await writeFile(join(output, "cpu-profile.cpuprofile"), JSON.stringify(profile))
+    if (heapProfile) await writeFile(join(output, "heap.heapprofile"), JSON.stringify(heapProfile))
+    if (renderProbeRaw) await writeFile(join(output, "render-probe.json"), renderProbeRaw)
     if (options.saveTrace && instrumented) {
       // Streamed event by event: one JSON.stringify over a long capture exceeds
       // the maximum string length.
@@ -869,7 +957,7 @@ const main = async () => {
       )
     }
 
-    if (instrumented && !sessionIdle.inTrace) {
+    if (instrumented && !quiet && !sessionIdle.inTrace) {
       console.warn(
         `\nWARNING: the end of the reply was not placed on the trace (${sessionIdle.detected ? sessionIdle.clockCheck ?? "idle frame outside the trace" : `no idle status frame among ${sessionIdle.framesSeen} for this session`}),`
         + " so the longest task after idle is missing, not zero.",
@@ -887,7 +975,7 @@ const main = async () => {
       )
     }
 
-    if (!assistantResponse.responded) {
+    if (assistantResponse && !assistantResponse.responded) {
       console.warn(
         "\nWARNING: the session went idle without an assistant message, so no response streamed."
         + " The provider most likely rejected the request; check the OpenCode log and the --model value."
@@ -895,7 +983,7 @@ const main = async () => {
       )
     }
 
-    if (!renderedStream) {
+    if (renderedStream === false) {
       console.warn(
         "\nWARNING: the recorded page never rendered the streaming session"
         + ` (message elements ${renderedBefore.messages} -> ${renderedAfter.messages},`
