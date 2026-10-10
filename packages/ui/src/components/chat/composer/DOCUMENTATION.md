@@ -151,9 +151,13 @@ and the marker; resizing or collapsing the frame updates it.
 In a normal session view the composer slot is an absolute layer over the
 bottom of the transcript (`ChatContainer`), and the input box is glass
 (`oc-glass-composer`). The draft screen and the expanded editor keep the slot
-in flow. A `ResizeObserver` on the slot writes its height into the chat
-column's `--chat-composer-inset`, and the timeline's tail spacer height into
-`--chat-composer-tail-inset`: the resting composer (the smallest height the
+in flow. A `ResizeObserver` on the slot publishes its height as
+`--chat-composer-inset` and the timeline's tail spacer height as
+`--chat-composer-tail-inset`, written onto the elements that read them (the
+end fade band and the tail spacer, registered through
+`state/composerInsetReaders.ts`), never on the chat column: inherited from the
+column, every new composer line restyled the whole transcript. The tail
+spacer height is the resting composer (the smallest height the
 slot has measured) plus an 80px gap, or the current height minus an 8px
 overlap into the gap, whichever is larger. With the last turn's own bottom
 padding the visible band at rest is about 104px. A row appearing inside the
@@ -166,8 +170,11 @@ the same rule to announce how far the transcript's end moves, which is less
 than the slot's height change whenever part of it is taken from the gap. While the slot is taller than at rest
 the column carries `data-composer-grown`, and the recap hint, which rides the
 composer's top edge, hides until the composer is back at rest.
-The transcript's end fade reads `--chat-composer-inset` (plus the floating-panel
-clearance) through `--scroll-shadow-end-inset` in `index.css`, so a row that
+The transcript's end fade is a band in the chat background over the
+scroller's end (`.chat-scroll-fade--end` in `index.css`; a mask on the
+scroller made the GPU recomposite the whole transcript every frame). It reads
+`--chat-composer-inset` (plus the floating-panel clearance) through
+`--scroll-shadow-end-inset`, so a row that
 does reach the composer, as the newest lines of a live reply do while the
 follow glide is still catching up, dissolves above the box instead of being
 cut in half by its top edge. That inset applies only while a reply streams

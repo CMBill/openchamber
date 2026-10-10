@@ -15,7 +15,7 @@
 import type { ContextPartMetadata } from "@/lib/messages/contextParts"
 import { create } from "zustand"
 import type { Metadata, ModelRef, Part, Session, TextPart } from "@/lib/opencode/model"
-import type { AttachedFile, SessionContextUsage, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
+import type { AttachedFile, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
 import type { PermissionMode } from "@/stores/utils/permissionAutoAccept"
 import type { WorktreeMetadata } from "@/types/worktree"
 import { opencodeClient, type SkillMentions } from "@/lib/opencode/client"
@@ -92,7 +92,6 @@ import { getRuntimeKey, isTransientRuntimeKey } from "@/lib/runtime-switch"
 import { clearLastActiveSession, persistLastActiveSession, readLastActiveSession } from "./last-session-cache"
 import { persistWorktreeTopology, readPersistedWorktreeTopology } from "./worktree-topology-cache"
 import { rememberRuntimeLiveStatus } from "./runtime-live-memory"
-import { buildSessionContextUsage } from "@/stores/utils/tokenUtils"
 import {
   createInputHistoryIdentity,
   useInputHistoryStore,
@@ -462,7 +461,6 @@ export type SessionUIState = {
   clearError: () => void
   markSessionAsOpenChamberCreated: (sessionId: string) => void
   isOpenChamberCreatedSession: (sessionId: string) => boolean
-  getContextUsage: (contextLimit: number, outputLimit: number) => SessionContextUsage | null
   initializeNewOpenChamberSession: (sessionId: string, agents: unknown[]) => void
   setWorktreeMetadata: (sessionId: string, metadata: WorktreeMetadata | null) => void
   overrideNewSessionDraftTarget: (options: Record<string, unknown>) => void
@@ -1669,14 +1667,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     }),
 
   isOpenChamberCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
-
-  getContextUsage: (contextLimit: number, outputLimit: number) => {
-    if (get().newSessionDraft?.open) return null
-    const sessionId = get().currentSessionId
-    if (!sessionId) return null
-
-    return buildSessionContextUsage(getSyncMessages(sessionId), contextLimit, outputLimit)
-  },
 
   initializeNewOpenChamberSession: () => {
     // Stub — was a no-op in old store

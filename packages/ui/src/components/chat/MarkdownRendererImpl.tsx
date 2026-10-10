@@ -60,6 +60,7 @@ import {
 import { fileReferenceExists, findUniqueFileByName } from './fileReferenceStat';
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 import { detachedMarkdownDomCache, type DetachedMarkdownDomKey } from './markdown/detachedMarkdownDomCache';
+import { applyOpenFencePatch } from './markdown/openFenceIncremental';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 
 const useCurrentMermaidTheme = () => {
@@ -793,6 +794,20 @@ const clearBlockEnterAnimation = (target: HTMLElement): void => {
   }
 };
 
+/**
+ * A morph to the next step's HTML drops the entrance animation of a block
+ * that just entered, since only new blocks carry it. A patched block drops it
+ * the same way, so both paths leave the same DOM.
+ */
+const clearPatchedBlockEnterAnimation = (block: HTMLElement): void => {
+  for (const child of Array.from(block.children)) {
+    if (!(child instanceof HTMLElement) || !child.classList.contains(BLOCK_ENTER_CLASS)) continue;
+    child.classList.remove(BLOCK_ENTER_CLASS);
+    child.style.removeProperty('--oc-md-enter-delay');
+    if (!child.getAttribute('style')) child.removeAttribute('style');
+  }
+};
+
 const domMatchesRenderedBlocks = (
   target: HTMLElement,
   blocks: ReadonlyArray<{ id: string }>,
@@ -1248,6 +1263,18 @@ const useMorphdomMarkdown = ({
           if (!mermaidViewerRef.current && shouldRefreshMermaidViewers(el)) {
             refreshMermaidViewers();
           }
+          return;
+        }
+
+        // A code fence still streaming: keep the lines already painted and
+        // add the new ones instead of rebuilding and diffing the whole block.
+        const paintedId = el.getAttribute('data-md-id');
+        const patch = paintedId && el.getAttribute(MARKDOWN_DECORATION_ID_ATTR) === decorationId
+          ? block.patchFrom?.(paintedId)
+          : null;
+        if (patch && applyOpenFencePatch(el, patch)) {
+          clearPatchedBlockEnterAnimation(el);
+          el.setAttribute('data-md-id', block.id);
           return;
         }
 

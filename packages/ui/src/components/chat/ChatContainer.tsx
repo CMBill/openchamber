@@ -46,6 +46,11 @@ import {
     forgetComposerSlot,
     recordComposerSlotHeight,
 } from '@/components/chat/composer/state/composerTailInset';
+import {
+    publishComposerInsets,
+    registerComposerInsetReader,
+    withdrawComposerInsets,
+} from '@/components/chat/composer/state/composerInsetReaders';
 import { SessionErrorNotice } from '@/components/chat/SessionErrorNotice';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
@@ -191,7 +196,7 @@ type ChatViewportProps = {
     isDesktopExpandedInput: boolean;
     isMobile: boolean;
     /** The composer floats over the transcript and reserves its band via
-        `--chat-composer-tail-inset` on the chat column. */
+        `--chat-composer-tail-inset` on the tail spacer (composerInsetReaders). */
     floatingComposer: boolean;
     directory?: string;
     scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -212,6 +217,8 @@ type ChatViewportProps = {
         fallbackTimestamp?: number;
     } | null;
     scrollToBottom: () => void;
+    /** A drag on the overlay scrollbar's thumb takes the scroll from auto-follow. */
+    onScrollbarDrag: () => void;
     endPinningReleased: boolean;
     /** The user waited for this session (held or fetched); reveal it with a fade. */
     revealWaited: boolean;
@@ -248,6 +255,7 @@ const ChatViewport = React.memo(({
     activeStreamingPhase,
     retryOverlay,
     scrollToBottom,
+    onScrollbarDrag,
     endPinningReleased,
     revealWaited,
     revealGate,
@@ -368,10 +376,12 @@ const ChatViewport = React.memo(({
                 so the end of the transcript stays readable above them; the
                 extra gap is the breathing room between the last row and the
                 top edge of whatever floats. Both heights come from CSS
-                variables written straight by observers, so a growing composer
-                or panel resizes the footer without a list re-render; the
-                list's own footer observer then extends the content. */}
+                variables written straight by observers (the composer's onto
+                this element itself, see composerInsetReaders), so a growing
+                composer or panel resizes the footer without a list re-render;
+                the list's own footer observer then extends the content. */}
             <div
+                ref={registerComposerInsetReader}
                 className="flex-shrink-0"
                 style={{
                     height: floatingComposer
@@ -531,7 +541,13 @@ const ChatViewport = React.memo(({
                     listFooter={listFooter}
                     scrollContainerProps={scrollContainerProps}
                 />
-                <OverlayScrollbar containerRef={scrollRef} disableHorizontal suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
+                {/* The transcript's edge fades: bands in the chat background
+                    over the scroller, shown by its scroll-shadow attributes
+                    (index.css `.chat-scroll-fade`). They must stay later
+                    siblings of the scroller. */}
+                <div aria-hidden="true" className="chat-scroll-fade chat-scroll-fade--top" />
+                <div ref={registerComposerInsetReader} aria-hidden="true" className="chat-scroll-fade chat-scroll-fade--end" />
+                <OverlayScrollbar containerRef={scrollRef} disableHorizontal suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} onThumbDragStart={onScrollbarDrag} />
                 {showPromptNavigator && promptTurnIds.length >= 2 ? (
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}
@@ -562,6 +578,7 @@ const ChatViewport = React.memo(({
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.retryOverlay === next.retryOverlay
         && prev.scrollToBottom === next.scrollToBottom
+        && prev.onScrollbarDrag === next.onScrollbarDrag
         && prev.onListMetricsChange === next.onListMetricsChange
         && prev.endPinningReleased === next.endPinningReleased
         && prev.revealWaited === next.revealWaited
@@ -1509,12 +1526,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     // On mobile the keyboard choreography still moves the form inside the
     // slot and shrinks the column around it, so the slot rides along unchanged.
     const floatingComposer = !draftLayoutVisible && !isDesktopExpandedInput;
-    // The slot's height is published as `--chat-composer-inset` on the chat
-    // column (the end fade reads it), and the list footer's tail spacer reads
+    // The slot's height is published as `--chat-composer-inset` (the end fade
+    // reads it) and the list footer's tail spacer reads
     // `--chat-composer-tail-inset` (see composerTailInset: a composer that
     // grows takes the gap above it before it pushes the transcript). Both are
     // written straight from the observer so composer growth never re-renders
-    // the timeline. While the composer is taller than at rest,
+    // the timeline, and onto the reading elements, not the column: inherited
+    // from the column, every new composer line restyled the whole transcript
+    // (composerInsetReaders). While the composer is taller than at rest,
     // `data-composer-grown` on the column hides the recap hint, which rides
     // the composer's top edge and would otherwise land on the last row.
     React.useLayoutEffect(() => {
@@ -1524,8 +1543,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         const update = () => {
             const height = Math.round(slot.getBoundingClientRect().height);
             const { tailInset, grown } = recordComposerSlotHeight(column, height);
-            column.style.setProperty('--chat-composer-inset', `${height}px`);
-            column.style.setProperty('--chat-composer-tail-inset', `${tailInset}px`);
+            publishComposerInsets(column, { inset: height, tailInset });
             column.toggleAttribute('data-composer-grown', grown);
         };
         const observer = new ResizeObserver(update);
@@ -1534,8 +1552,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         return () => {
             observer.disconnect();
             forgetComposerSlot(column);
-            column.style.removeProperty('--chat-composer-inset');
-            column.style.removeProperty('--chat-composer-tail-inset');
+            withdrawComposerInsets(column);
             column.removeAttribute('data-composer-grown');
         };
     }, [composerSlotNode, floatingComposer]);
@@ -1725,6 +1742,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 activeStreamingPhase={activeStreamingPhase}
                 retryOverlay={retryOverlay}
                 scrollToBottom={resumeToLatestInstant}
+                onScrollbarDrag={onManualNavigation}
                 endPinningReleased={userOwnsScroll}
                 revealWaited={revealWaited}
                 revealGate={revealGate}

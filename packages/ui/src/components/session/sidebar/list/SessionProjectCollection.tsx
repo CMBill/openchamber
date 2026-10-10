@@ -308,6 +308,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
     projectRepoStatus: topology.projectRepoStatus,
     projectRootBranches: topology.projectRootBranches,
     gitBranches: topology.gitBranches,
+    sessionOrderRanks: collection.sessionOrderRanks,
     lastRepoStatus: topology.lastRepoStatus,
     buildGroupedSessions,
     hasSessionSearchQuery: view.hasSessionSearchQuery,
