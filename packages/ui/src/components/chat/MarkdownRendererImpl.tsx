@@ -4,7 +4,7 @@ import { renderMermaidASCII, renderMermaidSVG } from 'beautiful-mermaid';
 import type { Part } from '@/lib/opencode/model';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { openExternalUrl } from '@/lib/url';
+import { isAppLinkUrl, openExternalUrl } from '@/lib/url';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import type { Theme } from '@/types/theme';
@@ -243,6 +243,7 @@ const unwrapBlockCodePathTokens = (container: HTMLElement): void => {
 const extractPathCandidateFromElement = (element: HTMLElement): string => {
   if (element.tagName.toLowerCase() === 'a') {
     const href = element.getAttribute('href')?.trim();
+    if (href && isAppLinkUrl(href)) return '';
     const fileUrlPath = href ? localPathFromFileUrl(href) : null;
     if (fileUrlPath) {
       return fileUrlPath;
@@ -267,6 +268,7 @@ const extractHrefFileReferenceCandidate = (anchor: HTMLAnchorElement): string | 
   if (!href) {
     return null;
   }
+  if (isAppLinkUrl(href)) return null;
   const fileUrlPath = localPathFromFileUrl(href);
   if (fileUrlPath) {
     return fileUrlPath;

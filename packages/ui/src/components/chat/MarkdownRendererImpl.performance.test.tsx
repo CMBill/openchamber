@@ -3,6 +3,11 @@ import { Window } from 'happy-dom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { TextPart } from '@/lib/opencode/model';
+import { getUrlScheme, isAppLinkUrl } from '@/lib/url';
+
+const classifyAppLinkUrl = isAppLinkUrl;
+const readUrlScheme = getUrlScheme;
+let fileLinkTestDirectory: string | null = null;
 
 type OperationCounts = {
   innerHTMLWrites: number;
@@ -305,14 +310,14 @@ const initializePerformanceDom = async (): Promise<void> => {
   mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
   mock.module('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => null }));
   mock.module('@/stores/useUIStore', () => ({ useUIStore: Object.assign((selector: (state: typeof fakeState) => UIStateSelection) => selector(fakeState), { getState: () => fakeState }) }));
-  mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null }));
+  mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => fileLinkTestDirectory }));
   mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ editor: undefined, runtime: { isVSCode: false } }) }));
   mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => ({ ok: false }) }));
-  mock.module('@/lib/url', () => ({ getUrlScheme: () => null, isAppLinkUrl: () => false, isExternalHttpUrl: () => false, openConfirmedAppLinkUrl: async () => false, openExternalUrl: async () => undefined, getExternalFaviconUrl: () => null, isLoopbackHttpUrl: () => false }));
+  mock.module('@/lib/url', () => ({ getUrlScheme: readUrlScheme, isAppLinkUrl: classifyAppLinkUrl, isExternalHttpUrl: () => false, openConfirmedAppLinkUrl: async () => false, openExternalUrl: async () => undefined, getExternalFaviconUrl: () => null, isLoopbackHttpUrl: () => false }));
   mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false, openDesktopPath: async () => false }));
   mock.module('@/lib/runtimeSurface', () => ({ isMobileSurfaceRuntime: () => false }));
   mock.module('@/lib/router/openSessionFromRoute', () => ({ openSessionLink: async () => undefined }));
-  mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => true, toAbsoluteFilePath: () => '', normalizeFilePath: (value: string) => value, isAbsoluteFilePath: (value: string) => value.startsWith('/') }));
+  mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => fileLinkTestDirectory === null, toAbsoluteFilePath: (_base: string, value: string) => `/outside/${value}`, normalizeFilePath: (value: string) => value, isAbsoluteFilePath: (value: string) => value.startsWith('/') }));
   mock.module('@/lib/clipboard', () => ({ copyTextToClipboard: async () => undefined }));
   mock.module('beautiful-mermaid', () => ({
     renderMermaidASCII: () => 'diagram',
@@ -342,6 +347,42 @@ afterAll(() => {
 });
 
 describe('MarkdownRenderer DOM mount performance contract', () => {
+  test('does not annotate app links with file-looking labels as internal file links', async () => {
+    fileLinkTestDirectory = '/repo';
+    const host = document.createElement('div');
+    document.body.replaceChildren(host);
+    const root = createRoot(host);
+    const urls = [
+      'vscode://file/C:/Project/src/PlayerData.luau:42',
+      'cursor://file/Project/package.json:7',
+    ];
+    try {
+      await act(async () => {
+        root.render(<MarkdownRenderer
+          content={`[PlayerData.luau:42](${urls[0]})\n\n[package.json:7](${urls[1]})\n\n\`ordinary.ts:12\``}
+          messageId="app-file-links"
+          isAnimated={false}
+          isStreaming={false}
+          enableFileReferences
+        />);
+        await waitForSettledEffects();
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); });
+      await flushAnimationFrame();
+      await act(async () => waitForSettledEffects());
+      const anchors = host.querySelectorAll('a');
+      expect(Array.from(anchors).map((anchor) => anchor.getAttribute('href'))).toEqual(urls);
+      for (const anchor of anchors) {
+        expect(anchor.hasAttribute('data-openchamber-file-link')).toBe(false);
+      }
+      // The annotation pass really ran: a normal reference still opens internally.
+      expect(host.querySelector('[data-markdown="inline-code"]')?.getAttribute('data-openchamber-file-link')).toBe('true');
+    } finally {
+      await act(async () => root.unmount());
+      fileLinkTestDirectory = null;
+    }
+  });
+
   test('preserves disclosure choices through streaming, settlement, and redecorating', async () => {
     const host = document.createElement('div');
     document.body.replaceChildren(host);

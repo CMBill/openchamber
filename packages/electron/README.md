@@ -98,6 +98,11 @@ PDF iframes also start with an opaque origin under the packaged UI protocol. The
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI.
 
+Confirmed chat application links use the local-page-gated `desktop_open_external_url`
+command and the OS protocol handler. `external-url-policy.mjs` validates schemes
+again in main, with the same exclusions as the shared UI classifier. Native
+opening failures do not fall back to a browser window for application links.
+
 The compatibility gate can reuse the embedded managed OpenCode CLI preflight
 through `desktop_managed_opencode_compatible`. Main matches the requested
 API origin to the local backend and reads the lifecycle-owned preflight promise.
