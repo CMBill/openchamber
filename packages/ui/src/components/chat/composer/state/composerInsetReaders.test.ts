@@ -3,8 +3,11 @@ import { Window } from 'happy-dom';
 
 import {
     publishComposerInsets,
+    publishFloatingPanelClearance,
     registerComposerInsetReader,
+    registerFloatingPanelClearanceReader,
     withdrawComposerInsets,
+    withdrawFloatingPanelClearance,
 } from './composerInsetReaders';
 
 const DOM_GLOBAL_NAMES = ['window', 'document', 'HTMLElement'] as const;
@@ -20,6 +23,10 @@ describe('composer inset readers', () => {
 
     const register = (element: HTMLElement) => {
         const release = registerComposerInsetReader(element);
+        if (release) releases.push(release);
+    };
+    const registerClearance = (element: HTMLElement) => {
+        const release = registerFloatingPanelClearanceReader(element);
         if (release) releases.push(release);
     };
 
@@ -99,6 +106,49 @@ describe('composer inset readers', () => {
 
         publishComposerInsets(column, { inset: 118, tailInset: 198 });
 
+        expect(spacer.style.getPropertyValue('--chat-composer-tail-inset')).toBe('');
+    });
+
+    test('the floating panel clearance goes onto its readers, never onto the column or the transcript', () => {
+        const overlay = document.createElement('div');
+        column.append(overlay);
+        register(spacer);
+        registerClearance(overlay);
+
+        publishFloatingPanelClearance(column, 64);
+
+        expect(spacer.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('64px');
+        expect(overlay.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('64px');
+        expect(column.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('');
+        expect(transcriptRow.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('');
+        // A clearance-only reader does not take the composer insets.
+        publishComposerInsets(column, { inset: 118, tailInset: 198 });
+        expect(overlay.style.getPropertyValue('--chat-composer-inset')).toBe('');
+    });
+
+    test('a clearance reader mounted while a panel is docked takes its clearance', () => {
+        publishFloatingPanelClearance(column, 52);
+        const overlay = document.createElement('div');
+        column.append(overlay);
+        registerClearance(overlay);
+
+        expect(overlay.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('52px');
+    });
+
+    test('the clearance and the insets publish and withdraw independently', () => {
+        register(spacer);
+        publishComposerInsets(column, { inset: 118, tailInset: 198 });
+        publishFloatingPanelClearance(column, 64);
+
+        withdrawFloatingPanelClearance(column);
+
+        expect(spacer.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('');
+        expect(spacer.style.getPropertyValue('--chat-composer-tail-inset')).toBe('198px');
+
+        publishFloatingPanelClearance(column, 40);
+        withdrawComposerInsets(column);
+
+        expect(spacer.style.getPropertyValue('--chat-floating-panel-clearance')).toBe('40px');
         expect(spacer.style.getPropertyValue('--chat-composer-tail-inset')).toBe('');
     });
 });

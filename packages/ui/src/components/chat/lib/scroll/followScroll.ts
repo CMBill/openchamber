@@ -34,14 +34,15 @@ const readStoredMode = (): FollowScrollMode => {
 // Read once at startup and again only when told to: the follow path asks for
 // the mode on every frame, so it must not reach localStorage.
 let currentMode: FollowScrollMode = readStoredMode();
-if (typeof window !== 'undefined') {
+const browserWindow = globalThis.window;
+if (browserWindow) {
     const refreshMode = () => {
         currentMode = readStoredMode();
     };
-    window.addEventListener('storage', (event) => {
+    browserWindow.addEventListener('storage', (event) => {
         if (event.key === null || event.key === FOLLOW_SCROLL_STORAGE_KEY) refreshMode();
     });
-    window.addEventListener(FOLLOW_SCROLL_MODE_EVENT, refreshMode);
+    browserWindow.addEventListener(FOLLOW_SCROLL_MODE_EVENT, refreshMode);
 }
 
 export const getFollowScrollMode = (): FollowScrollMode => currentMode;

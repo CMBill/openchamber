@@ -149,6 +149,11 @@ interface UseChatTimelineScrollResult {
      * chrome that mirrors the reader's actual position, like the recap hint.
      */
     viewportAtEnd: boolean;
+    /**
+     * The viewport is within LOAD_OLDER_REACH_VIEWPORTS of the content's
+     * start, where the "Load older" button above the rows is in reach.
+     */
+    nearContentStart: boolean;
     isFollowingProgrammatically: boolean;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     scrollToBottomOnSend: () => void;
@@ -175,6 +180,9 @@ const MESSAGE_LINK_GAP_PX = 12;
 const MESSAGE_LINK_HIGHLIGHT_MS = 1200;
 // How long after a send growth glides before the session reports working.
 const SEND_GLIDE_WINDOW_MS = 2000;
+// How close to the start of the content, in viewport heights, the reader has
+// to be for the "Load older" button to show.
+const LOAD_OLDER_REACH_VIEWPORTS = 2;
 // A follow glide that lands this close to an end that moved closes the gap
 // with an instant write: too small to see as a jump, unlike a second glide.
 const FOLLOW_LANDING_SNAP_MAX_PX = 4;
@@ -184,8 +192,9 @@ let reducedMotionQuery: MediaQueryList | null | undefined;
 // less motion. The query object is live, so it is created once.
 const prefersReducedMotion = (): boolean => {
     if (reducedMotionQuery === undefined) {
-        reducedMotionQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-            ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        const browserWindow = globalThis.window;
+        reducedMotionQuery = browserWindow?.matchMedia
+            ? browserWindow.matchMedia('(prefers-reduced-motion: reduce)')
             : null;
     }
     return reducedMotionQuery?.matches === true;
@@ -196,8 +205,9 @@ const followScrollBehavior = (): ScrollBehavior => (prefersReducedMotion() ? 'au
 // burst threshold is counted in those lines. Read once per hook, not per frame.
 const MESSAGE_TEXT_LINE_HEIGHT = 1.625;
 const readMessageLineHeightPx = (): number => {
-    if (typeof document === 'undefined') return 0;
-    const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const root = globalThis.document?.documentElement;
+    if (!root) return 0;
+    const rootFontSize = Number.parseFloat(getComputedStyle(root).fontSize);
     return Number.isFinite(rootFontSize) ? rootFontSize * MESSAGE_TEXT_LINE_HEIGHT : 0;
 };
 
@@ -259,6 +269,7 @@ export const useChatTimelineScroll = ({
     // overlay scrollbar suppression instead of the anchor's mere existence.
     const [userOwnsScroll, setUserOwnsScroll] = React.useState(false);
     const [viewportAtEnd, setViewportAtEnd] = React.useState(true);
+    const [nearContentStart, setNearContentStart] = React.useState(true);
     // Burst follow: the hidden-tail threshold (read once), and whether the
     // last follow work was for a live reply, so the first rest pin after it
     // knows the reply just ended.
@@ -730,19 +741,8 @@ export const useChatTimelineScroll = ({
         const state = list.getState();
         if (state.data.length === 0) return false;
 
-        const lastIndex = state.data.length - 1;
-        const lastTop = state.positionAtIndex(lastIndex);
-        const lastHeight = state.sizeAtIndex(lastIndex);
-        if (
-            typeof lastTop !== 'number'
-            || typeof lastHeight !== 'number'
-            || !Number.isFinite(lastTop)
-            || !Number.isFinite(lastHeight)
-        ) {
-            return false;
-        }
-
-        const realContentBottom = lastTop + Math.max(1, lastHeight);
+        const realContentBottom = getRowBottom(state, state.data.length - 1);
+        if (realContentBottom === null) return false;
         const visibleScrollLength = Math.max(0, state.scrollLength - composerOverlayHeightRef.current);
         return realContentBottom > visibleScrollLength;
     }, []);
@@ -760,12 +760,12 @@ export const useChatTimelineScroll = ({
     // is never scrolled.
     const widthResizingRef = React.useRef(false);
     React.useEffect(() => {
-        if (!scrollNode || typeof ResizeObserver === 'undefined') return;
+        if (!scrollNode || !globalThis.ResizeObserver) return;
         let lastWidth: number | null = null;
         let quietTimer: ReturnType<typeof setTimeout> | null = null;
         const observer = new ResizeObserver((observerEntries) => {
             const width = observerEntries[observerEntries.length - 1]?.contentRect.width;
-            if (typeof width !== 'number') return;
+            if (width === undefined) return;
             if (lastWidth === null) {
                 lastWidth = width;
                 return;
@@ -1065,6 +1065,11 @@ export const useChatTimelineScroll = ({
             if (isFollowReleaseKey(event) && canScrollUp()) gesture();
         };
         const handleScroll = () => {
+            const scrollTop = scrollNode.scrollTop;
+            // The list's scroll length is the viewport height it measured,
+            // so this costs no layout read.
+            const viewportLength = listRef.current?.getState().scrollLength ?? 0;
+            setNearContentStart(scrollTop < viewportLength * LOAD_OLDER_REACH_VIEWPORTS);
             // Mid-glide the viewport is legitimately short of the end.
             if (followGlideHeld()) return;
             // Following a reply, text runs ahead of the follow glide, and the
@@ -1077,7 +1082,6 @@ export const useChatTimelineScroll = ({
                 && isAtEndRef.current
                 && modeRef.current === 'following-end'
                 && isLiveFollowActive();
-            const scrollTop = scrollNode.scrollTop;
             // Held only for a position a follow glide is actually passing
             // through. A
             // scroll that did not come from one (the scrollbar thumb, find in
@@ -1133,6 +1137,7 @@ export const useChatTimelineScroll = ({
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
         setViewportAtEnd(true);
+        setNearContentStart(true);
         // A reply followed in the session left behind has no end to glide to.
         followedLiveReplyRef.current = false;
         glideRef.current = null;
@@ -1226,7 +1231,7 @@ export const useChatTimelineScroll = ({
     // resize is handled for a live reader as well — see the resize observer
     // above.
     React.useEffect(() => {
-        if (!scrollNode || typeof MutationObserver === 'undefined') return;
+        if (!scrollNode || !globalThis.MutationObserver) return;
         const content = scrollNode.firstElementChild;
         if (!content) return;
         const pin = () => {
@@ -1265,7 +1270,7 @@ export const useChatTimelineScroll = ({
         // and let one frame paint with the end out of view.
         const mutations = new MutationObserver(pin);
         mutations.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
-        const resizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(pin);
+        const resizes = globalThis.ResizeObserver ? new ResizeObserver(pin) : null;
         resizes?.observe(content);
         // The viewport itself shrinking (window height, a panel docked below)
         // moves the end out of view just like content growth does.
@@ -1408,6 +1413,7 @@ export const useChatTimelineScroll = ({
         showScrollButton,
         userOwnsScroll,
         viewportAtEnd,
+        nearContentStart,
         isFollowingProgrammatically,
         goToBottom,
         scrollToBottomOnSend,

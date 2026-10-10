@@ -138,13 +138,17 @@ opens the composer's review dialog (the one `/handoff-review` opens) or a
 walkthrough of the whole working tree, and is not shown on a mobile layout,
 where neither action is offered elsewhere either.
 
-The shared frame measures its height and gap into the chat column's
-`--chat-floating-panel-clearance`. The floating status row and
+The shared frame measures its height and gap as
+`--chat-floating-panel-clearance`, published through
+`state/composerInsetReaders.ts` onto the elements that read it, never on the
+chat column (inherited from the column, every resize of the frame restyled
+the whole transcript). The floating status row, the recap hint and
 `ScrollToBottomButton` translate upward by that amount, the transcript's tail
-spacer grows by it (so the frame never covers the last rows), and the column
-carries `data-floating-panel` while any frame is mounted so the recap hint
-hides instead of landing over the transcript. Unmounting clears the offset
-and the marker; resizing or collapsing the frame updates it.
+spacer and the end fade band grow by it (so the frame never covers the last
+rows), and the column carries `data-floating-panel` while any frame is
+mounted so the recap hint hides instead of landing over the transcript.
+Unmounting clears the offset and the marker; resizing or collapsing the frame
+updates it.
 
 ## Floating composer
 

@@ -49,6 +49,7 @@ import {
 import {
     publishComposerInsets,
     registerComposerInsetReader,
+    registerFloatingPanelClearanceReader,
     withdrawComposerInsets,
 } from '@/components/chat/composer/state/composerInsetReaders';
 import { SessionErrorNotice } from '@/components/chat/SessionErrorNotice';
@@ -348,9 +349,14 @@ const ChatViewport = React.memo(({
     // Everything that used to sit beside the list inside the scroll container
     // now renders as the list's header/footer, so it keeps scrolling with the
     // rows exactly as before.
+    //
+    // The header is a fixed-height slot that is always there, button or not.
+    // A header that came and went with history coverage changed the height
+    // above the rows, and a reader on the end saw the whole transcript jump
+    // by it (after a revert, mid-send). Only the button inside it toggles.
     const listHeader = React.useMemo(() => (
-        showLoadOlderButton ? (
-            <div className="flex justify-center pt-3 pb-1">
+        <div className="flex h-12 justify-center pt-3 pb-1">
+            {showLoadOlderButton ? (
                 <Button
                     variant="secondary"
                     size="sm"
@@ -362,8 +368,8 @@ const ChatViewport = React.memo(({
                     )}
                     {t('chat.history.loadOlder')}
                 </Button>
-            </div>
-        ) : null
+            ) : null}
+        </div>
     ), [isLoadingOlder, onLoadOlder, showLoadOlderButton, t]);
 
     const listFooter = React.useMemo(() => (
@@ -1213,6 +1219,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         showScrollButton,
         userOwnsScroll,
         viewportAtEnd,
+        nearContentStart,
     } = useChatTimelineScroll({
         currentSessionId,
         currentSessionKey,
@@ -1310,7 +1317,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     }, [goToBottom]);
 
     // A window too short to scroll must stay manually pageable on every runtime.
-    const showLoadOlderButton = timelineController.historySignals.canLoadEarlier;
+    const showLoadOlderButton = timelineController.historySignals.canLoadEarlier && nearContentStart;
     const timelineLoadEarlier = timelineController.loadEarlier;
     const handleLoadOlderClick = React.useCallback(() => {
         // Loading older history is an explicit move INTO the past: release
@@ -1837,6 +1844,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                             row and the pill it hands off to share the exact
                             distance from the input and the same left edge. */}
                         <div
+                            ref={registerFloatingPanelClearanceReader}
                             className={cn(
                                 'pointer-events-none absolute bottom-full inset-x-0 mb-2 transition-opacity duration-100',
                                 userOwnsScroll && 'opacity-0',
@@ -1868,6 +1876,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                             must not move the end. */}
                         {currentSessionId ? (
                             <div
+                                ref={registerFloatingPanelClearanceReader}
                                 className={cn(
                                     'oc-recap-hint pointer-events-none absolute bottom-full inset-x-0 mb-2 transition-opacity duration-300 ease-out',
                                     !viewportAtEnd && 'opacity-0',

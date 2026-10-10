@@ -80,7 +80,7 @@ const observeResizes = (container: HTMLElement): (() => void) => {
   // A web font arriving after the first fit changes the model's width
   // without changing the row's text or its box, so neither trigger above
   // fires; a finished turn would stay clipped.
-  const fonts = typeof document === 'undefined' ? null : document.fonts ?? null;
+  const fonts = globalThis.document?.fonts ?? null;
   window.addEventListener('resize', refit);
   fonts?.addEventListener('loadingdone', refit);
   const observer = new ResizeObserver(refit);
