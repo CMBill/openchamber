@@ -9,6 +9,7 @@ const { createRoot } = await import('react-dom/client');
 const { flushSync } = await import('react-dom');
 const { UsageCard } = await import('./UsageCard');
 const { I18nProvider } = await import('@/lib/i18n');
+const { useQuotaStore } = await import('@/stores/useQuotaStore');
 
 const balanceWindow: UsageWindow = {
   usedPercent: null,
@@ -28,6 +29,21 @@ const percentWindow: UsageWindow = {
   valueLabel: null,
 };
 
+const creditWindow: UsageWindow = {
+  ...balanceWindow,
+  usedPercent: 45,
+  remainingPercent: 55,
+  valueLabel: '900 / 2k credits',
+  remainingValueLabel: '1.1k / 2k credits',
+};
+
+const creditLabelOnlyWindow: UsageWindow = {
+  ...balanceWindow,
+  usedPercent: 45,
+  remainingPercent: 55,
+  valueLabel: '900 / 2k credits',
+};
+
 const containers: HTMLElement[] = [];
 const render = (window: UsageWindow) => {
   const container = document.createElement('div');
@@ -37,8 +53,13 @@ const render = (window: UsageWindow) => {
   return container;
 };
 
+const setDisplayMode = (mode: 'usage' | 'remaining') => {
+  useQuotaStore.setState({ displayMode: mode });
+};
+
 afterEach(() => {
   for (const container of containers.splice(0)) container.remove();
+  setDisplayMode('usage');
 });
 
 test('a balance-only window shows its value without a progress bar or "used" caption', () => {
@@ -54,4 +75,29 @@ test('a window with a percentage keeps its progress bar and caption', () => {
 
   expect(container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('42');
   expect(container.textContent).toContain('used');
+});
+
+test('a credit window shows consumed credits in used mode and remaining credits in remaining mode', () => {
+  const used = render(creditWindow);
+  expect(used.textContent).toContain('900 / 2k credits');
+
+  setDisplayMode('remaining');
+  const remaining = render(creditWindow);
+  expect(remaining.textContent).toContain('1.1k / 2k credits');
+  expect(remaining.textContent).not.toContain('900 / 2k credits');
+});
+
+test('remaining mode falls back to the remaining percent when no remaining label exists', () => {
+  setDisplayMode('remaining');
+  const container = render(creditLabelOnlyWindow);
+
+  expect(container.textContent).toContain('55%');
+  expect(container.textContent).not.toContain('900 / 2k credits');
+});
+
+test('a balance-only window keeps its value label in remaining mode', () => {
+  setDisplayMode('remaining');
+  const container = render(balanceWindow);
+
+  expect(container.textContent).toContain('¥635.27');
 });

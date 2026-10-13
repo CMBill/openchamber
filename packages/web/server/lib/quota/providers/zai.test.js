@@ -85,6 +85,7 @@ describe('Z.ai quota provider', () => {
       windowSeconds: 5 * 60 * 60,
       resetAt: 1787257978907,
       valueLabel: '65 / 12k credits',
+      remainingValueLabel: '11.9k / 12k credits',
     });
     expect(windows.weekly).toMatchObject({
       usedPercent: 1,
@@ -92,7 +93,41 @@ describe('Z.ai quota provider', () => {
       windowSeconds: 7 * 24 * 60 * 60,
       resetAt: 1787844668997,
       valueLabel: '65 / 60k credits',
+      remainingValueLabel: '59.9k / 60k credits',
     });
+  });
+
+  it('derives the remaining label from total minus consumed when remaining is absent', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+      code: 200,
+      data: {
+        limits: [
+          { type: 'CREDIT_LIMIT', unit: 3, number: 5, usage: 2000, currentValue: 900, percentage: 45 },
+        ],
+      },
+    })));
+
+    const result = await fetchQuota();
+
+    expect(result.ok).toBe(true);
+    expect(result.usage.windows['5h'].valueLabel).toBe('900 / 2k credits');
+    expect(result.usage.windows['5h'].remainingValueLabel).toBe('1.1k / 2k credits');
+  });
+
+  it('leaves both credit labels off percentage-only TOKENS_LIMIT windows', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+      data: {
+        limits: [
+          { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 30 },
+        ],
+      },
+    })));
+
+    const result = await fetchQuota();
+
+    expect(result.ok).toBe(true);
+    expect(result.usage.windows['5h'].valueLabel).toBeUndefined();
+    expect(result.usage.windows['5h'].remainingValueLabel).toBeUndefined();
   });
 
   it('attaches the nearest available gift reset to the matching windows', async () => {

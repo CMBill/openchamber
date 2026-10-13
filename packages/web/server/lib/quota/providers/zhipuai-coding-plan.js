@@ -36,7 +36,7 @@ export const providerName = 'Zhipu AI Coding Plan';
 const aliases = ['zhipuai-coding-plan', 'zhipuai', 'zhipu'];
 
 // Mirrors the Z.ai credit label (same monitor API family): `usage` is the
-// total, `currentValue` the consumed amount.
+// total, `currentValue` the consumed amount, `remaining` what is left.
 const formatCreditAmount = (value) => {
   if (value < 1000) return value.toLocaleString('en-US');
   return `${Math.round(value / 100) / 10}k`;
@@ -47,6 +47,18 @@ const formatCreditValueLabel = (limit) => {
   const total = toNumber(limit?.usage);
   if (used === null || total === null) return null;
   return `${formatCreditAmount(used)} / ${formatCreditAmount(total)} credits`;
+};
+
+const formatCreditRemainingLabel = (limit) => {
+  const total = toNumber(limit?.usage);
+  if (total === null) return null;
+  const remaining = toNumber(limit?.remaining) ?? (() => {
+    const used = toNumber(limit?.currentValue);
+    if (used === null) return null;
+    return Math.max(0, total - used);
+  })();
+  if (remaining === null) return null;
+  return `${formatCreditAmount(remaining)} / ${formatCreditAmount(total)} credits`;
 };
 
 // `percentage` is the used percent; when the API omits it, derive it from
@@ -161,7 +173,8 @@ export const fetchQuota = async () => {
         usedPercent: resolveUsedPercent(limit),
         windowSeconds,
         resetAt,
-        valueLabel: formatCreditValueLabel(limit)
+        valueLabel: formatCreditValueLabel(limit),
+        remainingValueLabel: formatCreditRemainingLabel(limit)
       });
     }
 

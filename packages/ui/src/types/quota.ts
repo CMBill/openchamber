@@ -41,6 +41,8 @@ export interface UsageWindow {
   resetAtFormatted: string | null;
   resetAfterFormatted: string | null;
   valueLabel?: string | null;
+  /** Used/total label; shown in used mode. */
+  remainingValueLabel?: string | null;
   /** Claimable gift (bonus) limit reset, when the provider exposes an available one. */
   giftReset?: UsageWindowGiftReset | null;
 }

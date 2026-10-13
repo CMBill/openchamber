@@ -38,7 +38,7 @@ import { toast } from '@/components/ui';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { Icon } from "@/components/icon/Icon";
-import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
+import { resolveQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { formatTimeForPreference } from '@/lib/timeFormat';
@@ -934,7 +934,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
                     const displayPercent = quotaDisplayMode === 'remaining'
                       ? window.remainingPercent
                       : window.usedPercent;
-                    const metricLabel = formatQuotaValueLabel(window.valueLabel, displayPercent);
+                    const metricLabel = resolveQuotaValueLabel(window, quotaDisplayMode);
                     return (
                     <DropdownMenuItem
                       key={`${group.providerId}-${label}`}

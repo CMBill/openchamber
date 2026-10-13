@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
-import { formatQuotaResetLabel, formatQuotaValueLabel } from '@/lib/quota';
+import { resolveQuotaValueLabel, formatQuotaResetLabel } from '@/lib/quota';
 import { cn } from '@/lib/utils';
 import type { TimeFormatPreference } from '@/stores/useUIStore';
 import type { UsageWindow } from '@/types';
@@ -48,10 +48,7 @@ export const UsageProviderCards: React.FC<{
         {group.rows.length > 0 ? (
           <div className="mt-1.5 space-y-1">
             {group.rows.map((row) => {
-              const displayPercent = displayMode === 'remaining'
-                ? row.window.remainingPercent
-                : row.window.usedPercent;
-              const metricLabel = formatQuotaValueLabel(row.window.valueLabel, displayPercent);
+              const metricLabel = resolveQuotaValueLabel(row.window, displayMode);
               const resetLabel = formatQuotaResetLabel(
                 row.window.resetAt,
                 row.window.resetAfterFormatted ?? row.window.resetAtFormatted,

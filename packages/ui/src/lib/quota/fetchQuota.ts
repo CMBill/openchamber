@@ -11,6 +11,7 @@ const windowSchema = z.object({
   resetAtFormatted: z.string().nullable(),
   resetAfterFormatted: z.string().nullable(),
   valueLabel: z.string().nullable().optional(),
+  remainingValueLabel: z.string().nullable().optional(),
   giftReset: z.object({ recordId: z.number(), expireAt: z.number() }).nullable().optional(),
 });
 const windowsSchema = z.record(z.string(), windowSchema);

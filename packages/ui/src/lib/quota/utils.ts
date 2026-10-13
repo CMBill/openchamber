@@ -1,6 +1,7 @@
 import { formatMessage, useI18nStore } from '@/lib/i18n/store';
 import { formatDateTimeForPreference, formatTimeForPreference } from '@/lib/timeFormat';
 import type { TimeFormatPreference } from '@/stores/useUIStore';
+import type { UsageWindow } from '@/types';
 
 const t = (key: Parameters<typeof formatMessage>[1]) => formatMessage(useI18nStore.getState().dictionary, key);
 
@@ -18,11 +19,22 @@ export const formatPercent = (value: number | null): string => {
   return `${Math.round(value)}%`;
 };
 
-export const formatQuotaValueLabel = (
-  valueLabel: string | null | undefined,
-  percent: number | null,
+/**
+ * The numeric label for a usage window in the given display mode.
+ *
+ * A credit-balance window (DeepSeek's credits balance) carries a value label
+ * and no percentage; it has no remaining form, so remaining mode falls back to
+ * the label instead of rendering "-".
+ */
+export const resolveQuotaValueLabel = (
+  window: Pick<UsageWindow, 'valueLabel' | 'remainingValueLabel' | 'usedPercent' | 'remainingPercent'>,
+  displayMode: 'usage' | 'remaining',
 ): string => {
-  return valueLabel ?? formatPercent(percent);
+  if (displayMode === 'remaining') {
+    if (window.remainingValueLabel) return window.remainingValueLabel;
+    if (window.remainingPercent !== null) return formatPercent(window.remainingPercent);
+  }
+  return window.valueLabel ?? formatPercent(window.usedPercent);
 };
 
 export const formatQuotaResetLabel = (

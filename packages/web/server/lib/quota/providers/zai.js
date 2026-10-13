@@ -29,6 +29,18 @@ const formatCreditValueLabel = (limit) => {
   return `${formatCreditAmount(used)} / ${formatCreditAmount(total)} credits`;
 };
 
+const formatCreditRemainingLabel = (limit) => {
+  const total = toNumber(limit?.usage);
+  if (total === null) return null;
+  const remaining = toNumber(limit?.remaining) ?? (() => {
+    const used = toNumber(limit?.currentValue);
+    if (used === null) return null;
+    return Math.max(0, total - used);
+  })();
+  if (remaining === null) return null;
+  return `${formatCreditAmount(remaining)} / ${formatCreditAmount(total)} credits`;
+};
+
 // Gift reset timestamps come as 'YYYY-MM-DD HH:mm:ss' in UTC+8.
 const ZAI_RESET_TIME_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
@@ -199,7 +211,8 @@ export const fetchQuota = async () => {
         usedPercent,
         windowSeconds,
         resetAt,
-        valueLabel: creditValueLabel
+        valueLabel: creditValueLabel,
+        remainingValueLabel: formatCreditRemainingLabel(limit)
       });
     }
 

@@ -1,7 +1,7 @@
 export { QUOTA_PROVIDERS } from './providers';
 export {
   clampPercent,
-  formatQuotaValueLabel,
+  resolveQuotaValueLabel,
   formatQuotaResetLabel,
   resolveUsageTone,
   formatWindowLabel,
